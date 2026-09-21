@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The product and engineering roadmap for Omarchy Calendar.">
+  <title>Omarchy Calendar — The Road Ahead</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #b9e5f7;
+      --ink-strong: #e3f6ff;
+      --muted: #7d9cac;
+      --faint: #506a78;
+      --canvas: #071018;
+      --canvas-deep: #040a0f;
+      --surface: #0d1822;
+      --surface-raised: #122230;
+      --line: rgba(185, 229, 247, .12);
+      --line-strong: rgba(185, 229, 247, .22);
+      --accent: #7597e8;
+      --accent-soft: rgba(117, 151, 232, .14);
+      --cyan: #72d4f7;
+      --green: #75c8a4;
+      --red: #d97886;
+      --amber: #e2b96f;
+      --radius: 18px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .32);
+      --content: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 500px at 88% -10%, rgba(117, 151, 232, .14), transparent 65%),
+        radial-gradient(700px 420px at 2% 22%, rgba(114, 212, 247, .08), transparent 70%),
+        var(--canvas);
+      font: 15px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; }
+    button { font: inherit; }
+    ::selection { color: var(--canvas-deep); background: var(--cyan); }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 16, 24, .84);
+      backdrop-filter: blur(20px) saturate(135%);
+    }
+    .topbar__inner {
+      width: min(calc(100% - 40px), var(--content));
+      min-height: 64px;
+      margin: auto;
+      display: flex;
+      align-items: center;
+      gap: 26px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink-strong);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .brand__mark {
+      width: 27px;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--canvas-deep);
+      background: linear-gradient(145deg, var(--cyan), var(--accent));
+      box-shadow: 0 0 28px rgba(114, 212, 247, .16);
+      font-size: 14px;
+    }
+    .phase-nav {
+      margin-left: auto;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .phase-nav::-webkit-scrollbar { display: none; }
+    .phase-nav a {
+      padding: 8px 11px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: .16s ease;
+    }
+    .phase-nav a:hover,
+    .phase-nav a.active {
+      color: var(--ink-strong);
+      border-color: var(--line);
+      background: rgba(185, 229, 247, .055);
+    }
+    .phase-nav a.active { color: var(--cyan); }
+
+    main { overflow: hidden; }
+    .wrap { width: min(calc(100% - 40px), var(--content)); margin-inline: auto; }
+
+    .hero {
+      min-height: 720px;
+      padding: 104px 0 72px;
+      display: grid;
+      align-items: center;
+      position: relative;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -18% -1px 35%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 24px;
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 26px; height: 2px; background: currentColor; }
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      color: var(--ink-strong);
+      font-size: clamp(52px, 8vw, 104px);
+      font-weight: 650;
+      letter-spacing: -.065em;
+      line-height: .95;
+    }
+    h1 span {
+      color: transparent;
+      background: linear-gradient(110deg, var(--cyan), #9bb6ff 72%);
+      background-clip: text;
+      -webkit-background-clip: text;
+    }
+    .lede {
+      max-width: 720px;
+      margin: 34px 0 0;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 23px);
+      line-height: 1.55;
+    }
+    .hero-grid {
+      margin-top: 68px;
+      display: grid;
+      grid-template-columns: 1.3fr repeat(3, .7fr);
+      gap: 12px;
+    }
+    .stat {
+      min-height: 122px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(18, 34, 48, .74), rgba(13, 24, 34, .68));
+    }
+    .stat--current { border-color: rgba(114, 212, 247, .34); }
+    .stat__label { color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .stat__value { margin-top: 10px; color: var(--ink-strong); font-size: 26px; font-weight: 700; letter-spacing: -.035em; }
+    .stat__note { margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+    .now {
+      margin: 0 0 96px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 22px;
+      border: 1px solid rgba(117, 200, 164, .28);
+      border-radius: var(--radius);
+      background: linear-gradient(120deg, rgba(117, 200, 164, .09), rgba(18, 34, 48, .72));
+      box-shadow: var(--shadow);
+    }
+    .now__icon {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      color: var(--green);
+      background: rgba(117, 200, 164, .12);
+      font-size: 22px;
+    }
+    .now h2 { margin: 0; color: var(--ink-strong); font-size: 20px; letter-spacing: -.02em; }
+    .now p { margin: 5px 0 0; color: var(--muted); }
+    .status-pill {
+      padding: 7px 11px;
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(117, 200, 164, .1);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .phase {
+      padding: 42px 0 100px;
+      scroll-margin-top: 76px;
+    }
+    .phase-head {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr) minmax(250px, 380px);
+      gap: 30px;
+      align-items: start;
+      margin-bottom: 34px;
+    }
+    .phase-number {
+      color: var(--accent);
+      font-size: 70px;
+      font-weight: 650;
+      letter-spacing: -.07em;
+      line-height: .9;
+      opacity: .88;
+    }
+    .phase-kicker { color: var(--cyan); font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .phase h2 { margin: 5px 0 0; color: var(--ink-strong); font-size: clamp(31px, 4vw, 48px); letter-spacing: -.045em; line-height: 1.1; }
+    .phase-summary { margin: 4px 0 0; color: var(--muted); font-size: 15px; }
+
+    .work-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+    .work-card {
+      grid-column: span 4;
+      min-height: 250px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(18, 34, 48, .72), rgba(9, 18, 27, .88));
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .12);
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+    .work-card:hover { transform: translateY(-2px); border-color: var(--line-strong); background: var(--surface); }
+    .work-card--wide { grid-column: span 6; }
+    .work-card--full { grid-column: 1 / -1; min-height: auto; }
+    .work-card__top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .work-card h3 { margin: 0; color: var(--ink-strong); font-size: 18px; letter-spacing: -.02em; }
+    .tag { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .work-card ul, .checklist { margin: 18px 0 0; padding: 0; list-style: none; }
+    .work-card li, .checklist li {
+      position: relative;
+      padding: 6px 0 6px 20px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .work-card li::before, .checklist li::before {
+      content: "";
+      position: absolute;
+      left: 1px;
+      top: 14px;
+      width: 5px;
+      height: 5px;
+      border: 1px solid var(--faint);
+      border-radius: 50%;
+    }
+
+    .exit {
+      margin-top: 14px;
+      padding: 23px 26px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      border: 1px solid rgba(117, 151, 232, .25);
+      border-radius: 14px;
+      background: var(--accent-soft);
+    }
+    .exit strong { color: var(--accent); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .exit span { color: var(--ink); }
+
+    .validation {
+      margin-bottom: 90px;
+      padding: 34px;
+      border: 1px solid rgba(226, 185, 111, .26);
+      border-radius: var(--radius);
+      background: linear-gradient(130deg, rgba(226, 185, 111, .08), rgba(13, 24, 34, .82));
+    }
+    .validation__head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+    .validation h2 { margin: 0; color: var(--ink-strong); font-size: 28px; letter-spacing: -.035em; }
+    .validation__head span { color: var(--amber); font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .validation .checklist { columns: 2; column-gap: 42px; }
+    .validation .checklist li { break-inside: avoid; }
+
+    .release-blocker {
+      margin: 12px 0 90px;
+      padding: 34px;
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 32px;
+      align-items: center;
+      border: 1px solid rgba(217, 120, 134, .32);
+      border-radius: var(--radius);
+      background: linear-gradient(120deg, rgba(217, 120, 134, .1), rgba(13, 24, 34, .8));
+    }
+    .release-blocker__flag { color: var(--red); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .release-blocker h3 { margin: 3px 0 8px; color: var(--ink-strong); font-size: 26px; letter-spacing: -.03em; }
+    .release-blocker p { margin: 0; color: var(--muted); }
+
+    .sequence { padding: 60px 0 120px; }
+    .sequence h2 { max-width: 760px; margin: 0; color: var(--ink-strong); font-size: 42px; letter-spacing: -.045em; }
+    .sequence-list { margin-top: 38px; counter-reset: step; }
+    .sequence-row {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 70px 1fr auto;
+      align-items: center;
+      gap: 20px;
+      min-height: 82px;
+      border-top: 1px solid var(--line);
+    }
+    .sequence-row:last-child { border-bottom: 1px solid var(--line); }
+    .sequence-row::before { content: counter(step, decimal-leading-zero); color: var(--faint); font-size: 13px; font-weight: 800; }
+    .sequence-row strong { color: var(--ink-strong); font-size: 17px; }
+    .sequence-row span { color: var(--muted); font-size: 13px; text-align: right; }
+
+    footer {
+      padding: 32px 0 48px;
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 12px;
+    }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
+
+    @media (max-width: 900px) {
+      .topbar__inner { width: min(calc(100% - 24px), var(--content)); }
+      .brand span { display: none; }
+      .hero { min-height: auto; padding-top: 84px; }
+      .hero-grid { grid-template-columns: repeat(2, 1fr); }
+      .phase-head { grid-template-columns: 78px 1fr; }
+      .phase-summary { grid-column: 2; }
+      .work-card, .work-card--wide { grid-column: span 6; }
+      .release-blocker { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .wrap { width: min(calc(100% - 24px), var(--content)); }
+      .phase-nav a { padding-inline: 8px; }
+      .hero { padding: 70px 0 48px; }
+      h1 { font-size: 50px; }
+      .hero-grid { grid-template-columns: 1fr; margin-top: 44px; }
+      .now { grid-template-columns: auto 1fr; padding: 22px; }
+      .status-pill { grid-column: 2; justify-self: start; }
+      .phase { padding-bottom: 72px; }
+      .phase-head { grid-template-columns: 1fr; gap: 15px; }
+      .phase-number { font-size: 46px; }
+      .phase-summary { grid-column: 1; }
+      .work-card, .work-card--wide { grid-column: 1 / -1; min-height: auto; }
+      .validation { padding: 24px; }
+      .validation .checklist { columns: 1; }
+      .validation__head { align-items: flex-start; flex-direction: column-reverse; }
+      .sequence-row { grid-template-columns: 44px 1fr; padding: 14px 0; }
+      .sequence-row span { grid-column: 2; text-align: left; }
+      footer .wrap { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+
+    @media print {
+      :root { color-scheme: light; --ink: #253946; --ink-strong: #10212c; --muted: #50636e; --faint: #71818a; --canvas: #fff; --surface: #f4f7f9; --surface-raised: #eef3f6; --line: rgba(16,33,44,.15); --line-strong: rgba(16,33,44,.28); }
+      body { background: white; font-size: 11px; }
+      .topbar { display: none; }
+      .hero { min-height: auto; padding: 30px 0; }
+      h1 { font-size: 58px; }
+      h1 span { color: var(--accent); background: none; }
+      .hero-grid { margin-top: 28px; }
+      .phase { padding: 20px 0; break-before: page; }
+      .work-card { break-inside: avoid; box-shadow: none; }
+      .work-card:hover { transform: none; }
+      .now, .validation, .release-blocker { box-shadow: none; break-inside: avoid; }
+      .sequence { padding-bottom: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand"><div class="brand__mark">O</div><span>Omarchy Calendar</span></div>
+      <nav class="phase-nav" aria-label="Roadmap phases">
+        <a href="#validate">Validate</a><a href="#phase-2">Phase 2</a><a href="#phase-3">Phase 3</a><a href="#phase-4">Phase 4</a><a href="#phase-5">Phase 5</a><a href="#quality">Quality</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <div>
+        <div class="eyebrow">Product &amp; engineering roadmap</div>
+        <h1>The road to a <span>truly native</span> calendar.</h1>
+        <p class="lede">A focused path from a beautiful, working Google calendar to the complete scheduling surface Omarchy deserves—offline-first, keyboard-native, and polished enough to live in every workspace.</p>
+        <div class="hero-grid">
+          <div class="stat stat--current"><div class="stat__label">Current position</div><div class="stat__value">Phase 2 · Create</div><div class="stat__note">Real Google uploads are live and idempotent</div></div>
+          <div class="stat"><div class="stat__label">Foundation</div><div class="stat__value">Complete</div><div class="stat__note">Phases 0–1</div></div>
+          <div class="stat"><div class="stat__label">Active schema</div><div class="stat__value">v4</div><div class="stat__note">Durable mutations</div></div>
+          <div class="stat"><div class="stat__label">North star</div><div class="stat__value">Native</div><div class="stat__note">Outlook depth, Omarchy soul</div></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="wrap now">
+      <div class="now__icon">✓</div>
+      <div><h2>The platform is proven</h2><p>OAuth, incremental sync, offline browsing, themed views, event creation, mutation persistence, and Google reconciliation are working. What remains is product depth.</p></div>
+      <div class="status-pill">Build is healthy</div>
+    </div>
+
+    <section id="validate" class="wrap validation">
+      <div class="validation__head"><h2>Immediate real-world validation</h2><span>Next checkpoint</span></div>
+      <ul class="checklist">
+        <li>Create one real event and confirm it appears in Google Calendar.</li>
+        <li>Confirm incremental sync returns the same event without duplication.</li>
+        <li>Create while offline, reconnect, and observe automatic upload.</li>
+        <li>Terminate the service mid-upload and verify idempotent recovery.</li>
+        <li>Exercise rate limiting and revoked authorization for mutations.</li>
+      </ul>
+    </section>
+
+    <section id="phase-2" class="phase wrap" data-nav="Phase 2">
+      <header class="phase-head">
+        <div class="phase-number">02</div>
+        <div><div class="phase-kicker">Active phase</div><h2>Complete calendar management</h2></div>
+        <p class="phase-summary">Finish the ordinary work of managing time: edit, move, resize, delete, recur, invite, and recover—online or off.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Edit existing events</h3><span class="tag">Core</span></div><ul><li>Editable side-sheet inspector with prefilled fields</li><li>Optimistic SQLite updates and Google PATCH</li><li>ETag-based conflict handling and HTTP 412 recovery</li><li>Ctrl+Enter save, Escape cancel, clean reconciliation</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Move &amp; resize</h3><span class="tag">Direct manipulation</span></div><ul><li>Drag between times, days, weeks, and month cells</li><li>Resize duration from event edges</li><li>Keyboard equivalents for every pointer action</li><li>Coalesce rapid drag mutations before upload</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Delete &amp; undo</h3><span class="tag">Safety</span></div><ul><li>Optimistic delete with timed undo</li><li>Durable Google delete mutation</li><li>Restore on failure and handle remote absence</li><li>Delete keyboard shortcut</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>All-day &amp; multi-day</h3><span class="tag">Correctness</span></div><ul><li>Date-only storage without UTC conversion</li><li>Multi-day spans in every view</li><li>Move between timed and all-day sections</li><li>Boundary and timezone tests</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Timezones</h3><span class="tag">Correctness</span></div><ul><li>IANA timezone picker and recent choices</li><li>Original zone plus local equivalent</li><li>DST gaps and repeated-hour handling</li><li>Cross-timezone test matrix</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Recurrence &amp; exceptions</h3><span class="tag">Deep work</span></div><ul><li>RRULE storage, parsing, and local expansion</li><li>Daily, weekly, monthly, yearly, weekday, and custom rules</li><li>Edit one, this-and-future, or the entire series</li><li>Moved exceptions, cancellations, and DST-safe expansion</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Rich event details</h3><span class="tag">Editor</span></div><ul><li>Reminders, descriptions, locations, links, and guests</li><li>Organizer and attendee roles</li><li>Busy/free, privacy, calendar selection, and calendar moves</li><li>Provider capability restrictions surfaced clearly</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Quick entry</h3><span class="tag">Speed</span></div><ul><li>Natural-language input</li><li>Explicit interpretation preview</li><li>Fast keyboard-first correction</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Search depth</h3><span class="tag">Find</span></div><ul><li>Description and attendee search</li><li>Date, calendar, organizer, and response filters</li><li>Highlighting and keyboard actions</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Mutation reliability</h3><span class="tag">Offline-first</span></div><ul><li>Update, delete, move, and RSVP queue operations</li><li>Coalescing, ordering, retry, and queue inspection</li><li>Manual retry, discard, and conflict resolution</li></ul></article>
+      </div>
+      <div class="exit"><strong>Exit condition</strong><span>Ordinary personal calendar management no longer requires opening Google Calendar.</span></div>
+    </section>
+
+    <section id="phase-3" class="phase wrap" data-nav="Phase 3">
+      <header class="phase-head">
+        <div class="phase-number">03</div>
+        <div><div class="phase-kicker">Meetings</div><h2>Scheduling for real work</h2></div>
+        <p class="phase-summary">Turn the calendar from a personal organizer into a complete workday command center.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card"><div class="work-card__top"><h3>Invitations &amp; RSVP</h3><span class="tag">People</span></div><ul><li>Invitation and response states</li><li>Accept, decline, and tentative mutations</li><li>Invitation notifications</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Meeting links</h3><span class="tag">Join</span></div><ul><li>Create Google Meet conferences</li><li>Parse Meet, Zoom, Teams, phones, and PINs</li><li>Prominent Join action at the right time</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Availability</h3><span class="tag">Coordinate</span></div><ul><li>Google FreeBusy integration</li><li>Shared availability timeline</li><li>Find common meeting windows</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Work event types</h3><span class="tag">Google</span></div><ul><li>Focus time and out-of-office</li><li>Working location</li><li>Capability-aware controls for API limitations</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Reminders &amp; snoozing</h3><span class="tag">Service</span></div><ul><li>Background reminder scheduling</li><li>Open, Join, Snooze, and Dismiss actions</li><li>Persistent snooze and delivery state</li></ul></article>
+      </div>
+      <div class="exit"><strong>Exit condition</strong><span>Common work-calendar and meeting workflows are complete without a browser.</span></div>
+    </section>
+
+    <section id="phase-4" class="phase wrap" data-nav="Phase 4">
+      <header class="phase-head">
+        <div class="phase-number">04</div>
+        <div><div class="phase-kicker">Productization</div><h2>Make it unmistakably Omarchy</h2></div>
+        <p class="phase-summary">Unify shell integration, visual quality, accessibility, diagnostics, performance, and distribution into a release-ready product.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card"><div class="work-card__top"><h3>Shell companion</h3><span class="tag">Native</span></div><ul><li>DBus-based bar plugin</li><li>Agenda, countdown, Join, refresh, and quick add</li><li>Global show/hide and creation shortcuts</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Visual refinement</h3><span class="tag">Beauty</span></div><ul><li>Spacing, rounding, opacity, and border tokens</li><li>Dark and light themes, density modes</li><li>Responsive layouts and purposeful motion</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Accessibility</h3><span class="tag">Everyone</span></div><ul><li>Complete keyboard access and focus order</li><li>Accessible roles, labels, and screen readers</li><li>Contrast and large-font resilience</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Onboarding</h3><span class="tag">Clarity</span></div><ul><li>First-run tour and OAuth guidance</li><li>Account health and actionable errors</li><li>Redacted diagnostics export</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Performance</h3><span class="tag">Fast</span></div><ul><li>Cold start and memory profiling</li><li>Large-calendar model virtualization</li><li>Database, search, and service endurance</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>Packaging</h3><span class="tag">Ship</span></div><ul><li>Arch PKGBUILD and production paths</li><li>Clean install, upgrade, and uninstall</li><li>Versioning, CI, changelog, and releases</li></ul></article>
+        <article class="work-card work-card--full"><div class="work-card__top"><h3>Multi-account support</h3><span class="tag">Depth</span></div><ul><li>Connect multiple Google identities, group calendars by account, route mutations correctly, and make account-level health obvious without cluttering the daily experience.</li></ul></article>
+      </div>
+      <div class="release-blocker"><div class="release-blocker__flag">External release blocker</div><div><h3>Google verification</h3><p>Production Cloud project, final consent branding, public privacy policy and terms, verified domains, support contact, sensitive-scope verification, production OAuth clients, and a dedicated integration-test account.</p></div></div>
+      <div class="exit"><strong>Exit condition</strong><span>The app feels like an Omarchy component rather than a themed third-party calendar.</span></div>
+    </section>
+
+    <section id="phase-5" class="phase wrap" data-nav="Phase 5">
+      <header class="phase-head">
+        <div class="phase-number">05</div>
+        <div><div class="phase-kicker">Expansion</div><h2>Beyond Google</h2></div>
+        <p class="phase-summary">Turn the provider-neutral architecture into real choice without compromising the interface.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card"><div class="work-card__top"><h3>Provider contract</h3><span class="tag">Architecture</span></div><ul><li>Formal provider interface</li><li>Capability flags</li><li>Google isolation behind the contract</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>CalDAV</h3><span class="tag">Standards</span></div><ul><li>Discovery and authentication</li><li>Sync tokens and mutations</li><li>Provider contract coverage</li></ul></article>
+        <article class="work-card"><div class="work-card__top"><h3>iCalendar &amp; local</h3><span class="tag">Portable</span></div><ul><li>ICS import and export</li><li>Subscribed feeds</li><li>Local-only calendars</li></ul></article>
+      </div>
+      <div class="exit"><strong>Exit condition</strong><span>The product works with major standards-based services and no longer depends on Google.</span></div>
+    </section>
+
+    <section id="quality" class="phase wrap" data-nav="Quality">
+      <header class="phase-head">
+        <div class="phase-number">Q</div>
+        <div><div class="phase-kicker">Continuous track</div><h2>Proof, not hope</h2></div>
+        <p class="phase-summary">Correctness and resilience are built alongside each feature, with real APIs and real failure conditions.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Automated correctness</h3><span class="tag">Tests</span></div><ul><li>Every schema migration from every released version</li><li>All-day, multi-day, timezone, and DST boundaries</li><li>Recurrence, exceptions, conflict resolution, and coalescing</li><li>Create, update, delete, RSVP, drag, resize, focus, and undo</li></ul></article>
+        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Integration &amp; failure drills</h3><span class="tag">Resilience</span></div><ul><li>Dedicated Google account for full lifecycle tests</li><li>Offline edits and reconnection</li><li>Termination during every mutation type</li><li>Secret Service, disk, token, quota, and cache failures</li></ul></article>
+        <article class="work-card work-card--full"><div class="work-card__top"><h3>Visual confidence</h3><span class="tag">Beauty</span></div><ul><li>Repeatable snapshots for every primary view across themes, density modes, empty/loading/error states, and 100%, 125%, 150%, and 200% display scaling.</li></ul></article>
+      </div>
+    </section>
+
+    <section class="sequence wrap">
+      <div class="eyebrow">Execution order</div>
+      <h2>The shortest path from today to a daily-driver release.</h2>
+      <div class="sequence-list">
+        <div class="sequence-row"><strong>Real-world create validation</strong><span>Close the last loop on current work</span></div>
+        <div class="sequence-row"><strong>Edit, delete, and undo</strong><span>Complete basic CRUD</span></div>
+        <div class="sequence-row"><strong>Move and resize</strong><span>Unlock direct manipulation</span></div>
+        <div class="sequence-row"><strong>All-day and timezone correctness</strong><span>Protect calendar semantics</span></div>
+        <div class="sequence-row"><strong>Recurrence</strong><span>Complete the hard event model</span></div>
+        <div class="sequence-row"><strong>Reminders, guests, and meetings</strong><span>Reach work-calendar depth</span></div>
+        <div class="sequence-row"><strong>Omarchy shell and packaging</strong><span>Turn the app into a product</span></div>
+        <div class="sequence-row"><strong>CalDAV and portable calendars</strong><span>Expand beyond one provider</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer><div class="wrap"><span>Omarchy Calendar · Product &amp; Engineering Roadmap</span><span>Living document · September 2026</span></div></footer>
+
+  <script>
+    const links = [...document.querySelectorAll('.phase-nav a')];
+    const targets = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+    }, { rootMargin: '-20% 0px -65% 0px', threshold: [0, .1, .5] });
+    targets.forEach(target => observer.observe(target));
+  </script>
+</body>
+</html>
