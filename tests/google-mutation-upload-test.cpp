@@ -31,7 +31,8 @@ int main(int argc, char **argv)
     qputenv("OMARCHY_CALENDAR_GOOGLE_API_BASE_URL",
             QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()).toUtf8());
 
-    bool validRequest = false;
+    bool validCreateRequest = false;
+    bool validUpdateRequest = false;
     QObject::connect(&server, &QTcpServer::newConnection, &app, [&] {
         while (auto *socket = server.nextPendingConnection()) {
             QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
@@ -46,12 +47,22 @@ int main(int argc, char **argv)
                 if (request.size() < headerEnd + 4 + contentLength) return;
                 const QJsonObject body = QJsonDocument::fromJson(
                     request.mid(headerEnd + 4, contentLength)).object();
-                validRequest = request.startsWith("POST /calendar/v3/calendars/primary%40example.com/events")
-                    && request.contains("Authorization: Bearer test-write-token")
-                    && body.value("id").toString().size() == 32
-                    && body.value("summary").toString() == QStringLiteral("Upload contract")
-                    && body.value("start").toObject().value("timeZone").toString() == QStringLiteral("America/Phoenix");
-                respond(socket, R"({"id":"google-created-id","iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
+                if (request.startsWith("POST /calendar/v3/calendars/primary%40example.com/events")) {
+                    validCreateRequest = request.contains("Authorization: Bearer test-write-token")
+                        && body.value("id").toString().size() == 32
+                        && body.value("summary").toString() == QStringLiteral("Upload contract")
+                        && body.value("location").toString() == QStringLiteral("Before upload")
+                        && body.value("start").toObject().value("timeZone").toString() == QStringLiteral("America/Phoenix");
+                    respond(socket, R"({"id":"google-created-id","iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
+                } else {
+                    validUpdateRequest = request.startsWith("PATCH /calendar/v3/calendars/primary%40example.com/events/google-created-id")
+                        && request.contains("Authorization: Bearer test-write-token")
+                        && request.toLower().contains("if-match: etag-1")
+                        && !body.contains("id")
+                        && body.value("summary").toString() == QStringLiteral("Updated contract")
+                        && body.value("location").toString() == QStringLiteral("Phoenix");
+                    respond(socket, R"({"id":"google-created-id","iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/updated","etag":"etag-2","updated":"2026-09-21T04:00:00Z"})");
+                }
             });
         }
     });
@@ -66,11 +77,16 @@ int main(int argc, char **argv)
         } })) return 3;
     const QString calendarId = database.calendarsForAccount(accountId).array().at(0).toObject().value("id").toString();
     const qint64 start = QDateTime(QDate(2026, 9, 21), QTime(9, 0), QTimeZone("America/Phoenix")).toMSecsSinceEpoch();
-    if (database.createPendingEvent(QJsonObject {
+    const QString localEventId = database.createPendingEvent(QJsonObject {
             { "calendarId", calendarId }, { "title", "Upload contract" },
             { "startMs", double(start) }, { "endMs", double(start + 3600000) },
             { "timeZone", "America/Phoenix" }
-        }).isEmpty()) return 4;
+        });
+    if (localEventId.isEmpty() || !database.updatePendingEvent(QJsonObject {
+            { "id", localEventId }, { "calendarId", calendarId }, { "title", "Upload contract" },
+            { "location", "Before upload" }, { "startMs", double(start) },
+            { "endMs", double(start + 3600000) }, { "timeZone", "America/Phoenix" }
+        })) return 4;
 
     GoogleMutations mutations(database);
     QEventLoop loop;
@@ -83,8 +99,29 @@ int main(int argc, char **argv)
     if (!mutations.start(accountId, QStringLiteral("test-write-token"))) return 5;
     loop.exec();
     const QJsonArray events = database.eventsForRange("2026-09-21", "2026-09-21").array();
-    if (!completed || !validRequest || !database.nextPendingMutation(accountId).object().isEmpty()
+    if (!completed || !validCreateRequest || !database.nextPendingMutation(accountId).object().isEmpty()
         || events.size() != 1 || events.at(0).toObject().value("id").toString() != QStringLiteral("google-created-id"))
         return 6;
+
+    if (!database.updatePendingEvent(QJsonObject {
+            { "id", "google-created-id" }, { "calendarId", calendarId },
+            { "title", "Updated contract" }, { "location", "Phoenix" },
+            { "startMs", double(start + 1800000) }, { "endMs", double(start + 5400000) },
+            { "timeZone", "America/Phoenix" }
+        })) return 7;
+    const QJsonObject queuedUpdate = database.nextPendingMutation(accountId).object();
+    if (queuedUpdate.value("operation").toString() != QStringLiteral("update")
+        || queuedUpdate.value("baseEtag").toString() != QStringLiteral("etag-1")) return 8;
+    completed = false;
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    if (!mutations.start(accountId, QStringLiteral("test-write-token"))) return 9;
+    loop.exec();
+    const QJsonArray updatedEvents = database.eventsForRange("2026-09-21", "2026-09-21").array();
+    if (!completed || !validUpdateRequest || !database.nextPendingMutation(accountId).object().isEmpty()
+        || updatedEvents.size() != 1
+        || updatedEvents.at(0).toObject().value("title").toString() != QStringLiteral("Updated contract")
+        || updatedEvents.at(0).toObject().value("location").toString() != QStringLiteral("Phoenix")
+        || updatedEvents.at(0).toObject().value("etag").toString() != QStringLiteral("etag-2"))
+        return 10;
     return 0;
 }

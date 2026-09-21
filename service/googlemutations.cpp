@@ -21,7 +21,7 @@ QString responseError(const QByteArray &body, const QString &fallback)
     return message.isEmpty() ? fallback : message;
 }
 
-QJsonObject googleEventBody(const QJsonObject &payload)
+QJsonObject googleEventBody(const QJsonObject &payload, bool includeId)
 {
     const qint64 startMs = qint64(payload.value(QStringLiteral("startMs")).toDouble());
     const qint64 endMs = qint64(payload.value(QStringLiteral("endMs")).toDouble());
@@ -38,14 +38,16 @@ QJsonObject googleEventBody(const QJsonObject &payload)
         end.insert(QStringLiteral("dateTime"), QDateTime::fromMSecsSinceEpoch(endMs, zone).toString(Qt::ISODateWithMs));
         end.insert(QStringLiteral("timeZone"), QString::fromUtf8(zone.id()));
     }
-    return QJsonObject {
-        { QStringLiteral("id"), payload.value(QStringLiteral("googleEventId")) },
+    QJsonObject body {
         { QStringLiteral("summary"), payload.value(QStringLiteral("title")) },
         { QStringLiteral("description"), payload.value(QStringLiteral("description")) },
         { QStringLiteral("location"), payload.value(QStringLiteral("location")) },
         { QStringLiteral("start"), start },
         { QStringLiteral("end"), end }
     };
+    if (includeId)
+        body.insert(QStringLiteral("id"), payload.value(QStringLiteral("googleEventId")));
+    return body;
 }
 }
 
@@ -82,7 +84,9 @@ void GoogleMutations::cancel()
     m_busy = false;
     m_retryPending = false;
     m_currentMutationId.clear();
+    m_currentOperation.clear();
     m_currentGoogleEventId.clear();
+    m_currentBaseEtag.clear();
     emit stateChanged();
 }
 
@@ -91,8 +95,12 @@ void GoogleMutations::processNext()
     const QJsonObject mutation = m_database.nextPendingMutation(m_accountId).object();
     if (mutation.isEmpty()) { complete(); return; }
     m_currentMutationId = mutation.value(QStringLiteral("id")).toString();
-    m_currentGoogleEventId = mutation.value(QStringLiteral("payload")).toObject()
-                                 .value(QStringLiteral("googleEventId")).toString();
+    m_currentOperation = mutation.value(QStringLiteral("operation")).toString();
+    m_currentGoogleEventId = mutation.value(QStringLiteral("providerEventId")).toString();
+    m_currentBaseEtag = mutation.value(QStringLiteral("baseEtag")).toString();
+    if (m_currentOperation == QStringLiteral("create"))
+        m_currentGoogleEventId = mutation.value(QStringLiteral("payload")).toObject()
+                                     .value(QStringLiteral("googleEventId")).toString();
     m_busy = true;
     m_lastError.clear();
     m_retryAt.clear();
@@ -100,12 +108,21 @@ void GoogleMutations::processNext()
     emit stateChanged();
     const QByteArray calendarId = QUrl::toPercentEncoding(
         mutation.value(QStringLiteral("providerCalendarId")).toString());
-    QNetworkRequest request(QUrl::fromEncoded(m_apiBaseUrl.toUtf8()
-        + QByteArrayLiteral("/calendar/v3/calendars/") + calendarId + QByteArrayLiteral("/events")));
+    QByteArray endpoint = m_apiBaseUrl.toUtf8() + QByteArrayLiteral("/calendar/v3/calendars/")
+        + calendarId + QByteArrayLiteral("/events");
+    if (m_currentOperation == QStringLiteral("update"))
+        endpoint += QByteArrayLiteral("/") + QUrl::toPercentEncoding(m_currentGoogleEventId);
+    QNetworkRequest request(QUrl::fromEncoded(endpoint));
     request.setRawHeader("Authorization", QByteArrayLiteral("Bearer ") + m_accessToken.toUtf8());
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    auto *reply = m_network->post(request, QJsonDocument(
-        googleEventBody(mutation.value(QStringLiteral("payload")).toObject())).toJson(QJsonDocument::Compact));
+    if (m_currentOperation == QStringLiteral("update") && !m_currentBaseEtag.isEmpty())
+        request.setRawHeader("If-Match", m_currentBaseEtag.toUtf8());
+    const QByteArray body = QJsonDocument(googleEventBody(
+        mutation.value(QStringLiteral("payload")).toObject(),
+        m_currentOperation == QStringLiteral("create"))).toJson(QJsonDocument::Compact);
+    QNetworkReply *reply = m_currentOperation == QStringLiteral("update")
+        ? m_network->sendCustomRequest(request, QByteArrayLiteral("PATCH"), body)
+        : m_network->post(request, body);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleReply(reply); });
 }
 
@@ -115,7 +132,7 @@ void GoogleMutations::handleReply(QNetworkReply *reply)
     const QByteArray body = reply->readAll();
     const QString networkError = reply->errorString();
     reply->deleteLater();
-    if (status == 409 && !m_currentGoogleEventId.isEmpty()) {
+    if (m_currentOperation == QStringLiteral("create") && status == 409 && !m_currentGoogleEventId.isEmpty()) {
         const QJsonObject mutation = m_database.nextPendingMutation(m_accountId).object();
         const QByteArray calendarId = QUrl::toPercentEncoding(
             mutation.value(QStringLiteral("providerCalendarId")).toString());
@@ -130,18 +147,27 @@ void GoogleMutations::handleReply(QNetworkReply *reply)
     }
     if (status < 200 || status >= 300) {
         fail(responseError(body, status == 0 ? networkError
-             : QStringLiteral("Google event creation failed (%1)").arg(status)), status);
+             : QStringLiteral("Google event %1 failed (%2)")
+                   .arg(m_currentOperation == QStringLiteral("update") ? QStringLiteral("update")
+                                                                        : QStringLiteral("creation"))
+                   .arg(status)), status);
         return;
     }
     const QJsonDocument document = QJsonDocument::fromJson(body);
-    if (!document.isObject() || !m_database.completeCreateMutation(m_currentMutationId, document.object())) {
+    const bool reconciled = document.isObject()
+        && (m_currentOperation == QStringLiteral("update")
+            ? m_database.completeUpdateMutation(m_currentMutationId, document.object())
+            : m_database.completeCreateMutation(m_currentMutationId, document.object()));
+    if (!reconciled) {
         fail(document.isObject() ? m_database.lastError() : QStringLiteral("Google returned an invalid event"), 400);
         return;
     }
     m_lastError.clear();
     m_changed = true;
     m_currentMutationId.clear();
+    m_currentOperation.clear();
     m_currentGoogleEventId.clear();
+    m_currentBaseEtag.clear();
     processNext();
 }
 
@@ -171,7 +197,9 @@ void GoogleMutations::complete()
     m_busy = false;
     m_retryPending = false;
     m_currentMutationId.clear();
+    m_currentOperation.clear();
     m_currentGoogleEventId.clear();
+    m_currentBaseEtag.clear();
     m_retryAt.clear();
     emit stateChanged();
     emit finished(m_changed);

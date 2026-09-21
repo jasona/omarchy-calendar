@@ -22,11 +22,11 @@ result="$(sqlite3 "$test_dir/calendar.db" \
 [[ "$result" == "3:2:1" ]]
 
 schema_version="$(sqlite3 "$test_dir/calendar.db" "SELECT MAX(version) FROM schema_migrations;")"
-[[ "$schema_version" == "2" ]]
+[[ "$schema_version" == "4" ]]
 
 account_tables="$(sqlite3 "$test_dir/calendar.db" \
-  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('accounts','sync_cursors');")"
-[[ "$account_tables" == "2" ]]
+  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('accounts','sync_cursors','pending_mutations');")"
+[[ "$account_tables" == "3" ]]
 
 event_identity="$(sqlite3 "$test_dir/calendar.db" \
   "SELECT group_concat(name, ',') FROM pragma_table_info('events') WHERE pk > 0 ORDER BY pk;")"

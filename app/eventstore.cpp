@@ -326,6 +326,16 @@ QString EventStore::createEvent(const QVariantMap &event) const
     return reply.isValid() ? reply.value() : QString();
 }
 
+bool EventStore::updateEvent(const QVariantMap &event) const
+{
+    if (!serviceBacked())
+        return false;
+    const QString json = QString::fromUtf8(
+        QJsonDocument(QJsonObject::fromVariantMap(event)).toJson(QJsonDocument::Compact));
+    const QDBusReply<bool> reply = m_service->call(QStringLiteral("UpdateEvent"), json);
+    return reply.isValid() && reply.value();
+}
+
 bool EventStore::syncNow() const
 {
     if (!serviceBacked())

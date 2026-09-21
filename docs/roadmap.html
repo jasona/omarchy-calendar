@@ -179,6 +179,41 @@
     .stat__label { color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
     .stat__value { margin-top: 10px; color: var(--ink-strong); font-size: 26px; font-weight: 700; letter-spacing: -.035em; }
     .stat__note { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .progress-track { height: 5px; margin-top: 14px; overflow: hidden; border-radius: 99px; background: rgba(185, 229, 247, .09); }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--green), var(--cyan)); transition: width .5s ease; }
+
+    .roadmap-controls {
+      margin: -42px auto 52px;
+      padding: 20px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(13, 24, 34, .78);
+      backdrop-filter: blur(18px);
+    }
+    .legend, .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .legend { color: var(--muted); font-size: 12px; }
+    .legend__item { display: inline-flex; align-items: center; gap: 7px; margin-right: 8px; }
+    .legend__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .legend__dot--done { background: var(--green); }
+    .legend__dot--active { background: var(--cyan); box-shadow: 0 0 10px rgba(114, 212, 247, .55); }
+    .legend__dot--planned { background: var(--faint); }
+    .legend__dot--blocked { background: var(--red); }
+    .filter {
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .05em;
+    }
+    .filter:hover, .filter[aria-pressed="true"] { color: var(--ink-strong); border-color: var(--line-strong); background: rgba(185, 229, 247, .07); }
 
     .now {
       margin: 0 0 96px;
@@ -256,6 +291,29 @@
     .work-card__top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     .work-card h3 { margin: 0; color: var(--ink-strong); font-size: 18px; letter-spacing: -.02em; }
     .tag { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .item-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .item-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    [data-status="done"] { border-color: rgba(117, 200, 164, .28); }
+    [data-status="done"] .item-status { color: var(--green); background: rgba(117, 200, 164, .1); }
+    [data-status="done"] li::before { border-color: var(--green); background: var(--green); }
+    [data-status="active"] { border-color: rgba(114, 212, 247, .42); box-shadow: 0 12px 50px rgba(114, 212, 247, .07); }
+    [data-status="active"] .item-status { color: var(--cyan); background: rgba(114, 212, 247, .1); }
+    [data-status="planned"] .item-status { color: var(--muted); background: rgba(125, 156, 172, .1); }
+    [data-status="blocked"] { border-color: rgba(217, 120, 134, .38); }
+    [data-status="blocked"] .item-status { color: var(--red); background: rgba(217, 120, 134, .1); }
+    [data-roadmap-item][hidden] { display: none !important; }
+    .phase-progress { margin-top: 13px; color: var(--muted); font-size: 12px; font-weight: 700; }
     .work-card ul, .checklist { margin: 18px 0 0; padding: 0; list-style: none; }
     .work-card li, .checklist li {
       position: relative;
@@ -299,6 +357,18 @@
     .validation__head span { color: var(--amber); font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
     .validation .checklist { columns: 2; column-gap: 42px; }
     .validation .checklist li { break-inside: avoid; }
+    .validation .item-status { float: right; }
+
+    .maintenance {
+      margin: 0 auto 96px;
+      padding: 26px 28px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(13, 24, 34, .48);
+    }
+    .maintenance summary { color: var(--ink-strong); cursor: pointer; font-weight: 750; }
+    .maintenance p { max-width: 850px; margin: 14px 0 0; color: var(--muted); }
+    .maintenance code { padding: 2px 6px; border-radius: 5px; color: var(--cyan); background: rgba(114, 212, 247, .08); }
 
     .release-blocker {
       margin: 12px 0 90px;
@@ -345,6 +415,7 @@
       .brand span { display: none; }
       .hero { min-height: auto; padding-top: 84px; }
       .hero-grid { grid-template-columns: repeat(2, 1fr); }
+      .roadmap-controls { align-items: flex-start; flex-direction: column; }
       .phase-head { grid-template-columns: 78px 1fr; }
       .phase-summary { grid-column: 2; }
       .work-card, .work-card--wide { grid-column: span 6; }
@@ -356,6 +427,7 @@
       .hero { padding: 70px 0 48px; }
       h1 { font-size: 50px; }
       .hero-grid { grid-template-columns: 1fr; margin-top: 44px; }
+      .roadmap-controls { margin-top: -20px; }
       .now { grid-template-columns: auto 1fr; padding: 22px; }
       .status-pill { grid-column: 2; justify-self: start; }
       .phase { padding-bottom: 72px; }
@@ -392,12 +464,20 @@
     }
   </style>
 </head>
-<body>
+<!--
+  ROADMAP MAINTENANCE
+  -------------------
+  1. Every deliverable is an element with data-roadmap-item.
+  2. Change only data-status to one of: done, active, planned, blocked.
+  3. Set data-last-updated on <body> whenever roadmap facts change.
+  4. Counts, progress, badges, phase summaries, and filters update automatically.
+-->
+<body data-last-updated="2026-09-20">
   <header class="topbar">
     <div class="topbar__inner">
       <div class="brand"><div class="brand__mark">O</div><span>Omarchy Calendar</span></div>
       <nav class="phase-nav" aria-label="Roadmap phases">
-        <a href="#validate">Validate</a><a href="#phase-2">Phase 2</a><a href="#phase-3">Phase 3</a><a href="#phase-4">Phase 4</a><a href="#phase-5">Phase 5</a><a href="#quality">Quality</a>
+        <a href="#foundations">Finished</a><a href="#validate">Now</a><a href="#phase-2">Phase 2</a><a href="#phase-3">Phase 3</a><a href="#phase-4">Phase 4</a><a href="#phase-5">Phase 5</a><a href="#quality">Quality</a>
       </nav>
     </div>
   </header>
@@ -407,13 +487,28 @@
       <div>
         <div class="eyebrow">Product &amp; engineering roadmap</div>
         <h1>The road to a <span>truly native</span> calendar.</h1>
-        <p class="lede">A focused path from a beautiful, working Google calendar to the complete scheduling surface Omarchy deserves—offline-first, keyboard-native, and polished enough to live in every workspace.</p>
+        <p class="lede">A living, public record of what is shipped, what is underway, and what comes next on the path to a complete native calendar for Omarchy.</p>
         <div class="hero-grid">
-          <div class="stat stat--current"><div class="stat__label">Current position</div><div class="stat__value">Phase 2 · Create</div><div class="stat__note">Real Google uploads are live and idempotent</div></div>
-          <div class="stat"><div class="stat__label">Foundation</div><div class="stat__value">Complete</div><div class="stat__note">Phases 0–1</div></div>
-          <div class="stat"><div class="stat__label">Active schema</div><div class="stat__value">v4</div><div class="stat__note">Durable mutations</div></div>
-          <div class="stat"><div class="stat__label">North star</div><div class="stat__value">Native</div><div class="stat__note">Outlook depth, Omarchy soul</div></div>
+          <div class="stat stat--current"><div class="stat__label">Current focus</div><div class="stat__value">Event editing</div><div class="stat__note">Finish conflicts and live Google validation</div></div>
+          <div class="stat"><div class="stat__label">Finished</div><div class="stat__value" data-count="done">—</div><div class="stat__note">Shipped deliverables</div></div>
+          <div class="stat"><div class="stat__label">In progress</div><div class="stat__value" data-count="active">—</div><div class="stat__note">Active deliverables</div></div>
+          <div class="stat"><div class="stat__label">Still unfinished</div><div class="stat__value" data-count="unfinished">—</div><div class="stat__note"><span data-count="percent">—</span>% of roadmap shipped</div><div class="progress-track" aria-hidden="true"><div class="progress-fill"></div></div></div>
         </div>
+      </div>
+    </section>
+
+    <section class="wrap roadmap-controls" aria-label="Roadmap status controls">
+      <div class="legend" aria-label="Status legend">
+        <span class="legend__item"><span class="legend__dot legend__dot--done"></span>Finished</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--active"></span>In progress</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--planned"></span>Planned</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--blocked"></span>Blocked</span>
+      </div>
+      <div class="filters" aria-label="Filter roadmap">
+        <button class="filter" type="button" data-filter="all" aria-pressed="true">Everything</button>
+        <button class="filter" type="button" data-filter="done" aria-pressed="false">Finished</button>
+        <button class="filter" type="button" data-filter="unfinished" aria-pressed="false">Unfinished</button>
+        <button class="filter" type="button" data-filter="active" aria-pressed="false">In progress</button>
       </div>
     </section>
 
@@ -423,8 +518,27 @@
       <div class="status-pill">Build is healthy</div>
     </div>
 
-    <section id="validate" class="wrap validation">
-      <div class="validation__head"><h2>Immediate real-world validation</h2><span>Next checkpoint</span></div>
+    <section id="foundations" class="phase wrap" data-nav="Finished">
+      <header class="phase-head">
+        <div class="phase-number">✓</div>
+        <div><div class="phase-kicker">Phases 0–1 + creation foundation</div><h2>Finished and working</h2><div class="phase-progress"></div></div>
+        <p class="phase-summary">These capabilities exist in the repository today and form the proven base for the remaining roadmap.</p>
+      </header>
+      <div class="work-grid">
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Native application shell</h3></div><ul><li>Qt/QML day, week, month, and agenda views</li><li>Sidebar, inspector, navigation, and event cards</li><li>Wayland review and legible native window treatment</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Omarchy visual system</h3></div><ul><li>Live palette and font-token loading</li><li>Automatic theme file watching</li><li>Themed event composer controls</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Offline data foundation</h3></div><ul><li>SQLite WAL database and four schema generations</li><li>Transactional imports and integrity checks</li><li>Provider-neutral multi-account identities</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Desktop experience</h3></div><ul><li>Calendar navigation and current-time indicators</li><li>45-day agenda and local search</li><li>Visibility controls and overlapping-event layout</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Keyboard navigation</h3></div><ul><li>Focus cursors in every primary view</li><li>Arrow, J/K, Enter, Today, view, and search shortcuts</li><li>Automatic scrolling to selected events</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Google accounts &amp; OAuth</h3></div><ul><li>Desktop PKCE flow with loopback callback</li><li>Secret Service refresh-token storage</li><li>Account settings, removal, and editing-scope upgrade</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Google synchronization</h3></div><ul><li>Full and incremental calendar synchronization</li><li>Pagination, calendar selection, and sync-token recovery</li><li>Background, manual, and network-restoration refresh</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Sync resilience</h3></div><ul><li>Bounded retry, access-token rotation, and diagnostics</li><li>Deterministic server, quota, token, and revocation drills</li><li>Atomic compatibility feed for the Omarchy bar</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Event creation</h3></div><ul><li>Native keyboard-accessible composer</li><li>Optimistic local creation and durable queue</li><li>Google upload, retries, and identity reconciliation</li></ul></article>
+      </div>
+    </section>
+
+    <section id="validate" class="wrap validation" data-roadmap-item data-status="active">
+      <div class="validation__head"><h2>Immediate real-world validation</h2></div>
       <ul class="checklist">
         <li>Create one real event and confirm it appears in Google Calendar.</li>
         <li>Confirm incremental sync returns the same event without duplication.</li>
@@ -437,20 +551,20 @@
     <section id="phase-2" class="phase wrap" data-nav="Phase 2">
       <header class="phase-head">
         <div class="phase-number">02</div>
-        <div><div class="phase-kicker">Active phase</div><h2>Complete calendar management</h2></div>
+        <div><div class="phase-kicker">Active phase</div><h2>Complete calendar management</h2><div class="phase-progress"></div></div>
         <p class="phase-summary">Finish the ordinary work of managing time: edit, move, resize, delete, recur, invite, and recover—online or off.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Edit existing events</h3><span class="tag">Core</span></div><ul><li>Editable side-sheet inspector with prefilled fields</li><li>Optimistic SQLite updates and Google PATCH</li><li>ETag-based conflict handling and HTTP 412 recovery</li><li>Ctrl+Enter save, Escape cancel, clean reconciliation</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Move &amp; resize</h3><span class="tag">Direct manipulation</span></div><ul><li>Drag between times, days, weeks, and month cells</li><li>Resize duration from event edges</li><li>Keyboard equivalents for every pointer action</li><li>Coalesce rapid drag mutations before upload</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Delete &amp; undo</h3><span class="tag">Safety</span></div><ul><li>Optimistic delete with timed undo</li><li>Durable Google delete mutation</li><li>Restore on failure and handle remote absence</li><li>Delete keyboard shortcut</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>All-day &amp; multi-day</h3><span class="tag">Correctness</span></div><ul><li>Date-only storage without UTC conversion</li><li>Multi-day spans in every view</li><li>Move between timed and all-day sections</li><li>Boundary and timezone tests</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Timezones</h3><span class="tag">Correctness</span></div><ul><li>IANA timezone picker and recent choices</li><li>Original zone plus local equivalent</li><li>DST gaps and repeated-hour handling</li><li>Cross-timezone test matrix</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Recurrence &amp; exceptions</h3><span class="tag">Deep work</span></div><ul><li>RRULE storage, parsing, and local expansion</li><li>Daily, weekly, monthly, yearly, weekday, and custom rules</li><li>Edit one, this-and-future, or the entire series</li><li>Moved exceptions, cancellations, and DST-safe expansion</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Rich event details</h3><span class="tag">Editor</span></div><ul><li>Reminders, descriptions, locations, links, and guests</li><li>Organizer and attendee roles</li><li>Busy/free, privacy, calendar selection, and calendar moves</li><li>Provider capability restrictions surfaced clearly</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Quick entry</h3><span class="tag">Speed</span></div><ul><li>Natural-language input</li><li>Explicit interpretation preview</li><li>Fast keyboard-first correction</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Search depth</h3><span class="tag">Find</span></div><ul><li>Description and attendee search</li><li>Date, calendar, organizer, and response filters</li><li>Highlighting and keyboard actions</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Mutation reliability</h3><span class="tag">Offline-first</span></div><ul><li>Update, delete, move, and RSVP queue operations</li><li>Coalescing, ordering, retry, and queue inspection</li><li>Manual retry, discard, and conflict resolution</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="active"><div class="work-card__top"><h3>Edit existing events</h3></div><ul><li>✓ Prefilled native composer from the event inspector</li><li>✓ Optimistic SQLite updates and Google PATCH</li><li>ETag-based conflict handling and HTTP 412 recovery</li><li>Ctrl+Enter save and conflict-resolution polish</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Move &amp; resize</h3></div><ul><li>Drag between times, days, weeks, and month cells</li><li>Resize duration from event edges</li><li>Keyboard equivalents for every pointer action</li><li>Coalesce rapid drag mutations before upload</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Delete &amp; undo</h3></div><ul><li>Optimistic delete with timed undo</li><li>Durable Google delete mutation</li><li>Restore on failure and handle remote absence</li><li>Delete keyboard shortcut</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>All-day &amp; multi-day</h3></div><ul><li>Date-only storage without UTC conversion</li><li>Multi-day spans in every view</li><li>Move between timed and all-day sections</li><li>Boundary and timezone tests</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Timezones</h3></div><ul><li>IANA timezone picker and recent choices</li><li>Original zone plus local equivalent</li><li>DST gaps and repeated-hour handling</li><li>Cross-timezone test matrix</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Recurrence &amp; exceptions</h3></div><ul><li>RRULE storage, parsing, and local expansion</li><li>Daily, weekly, monthly, yearly, weekday, and custom rules</li><li>Edit one, this-and-future, or the entire series</li><li>Moved exceptions, cancellations, and DST-safe expansion</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Rich event details</h3></div><ul><li>Reminders, descriptions, locations, links, and guests</li><li>Organizer and attendee roles</li><li>Busy/free, privacy, calendar selection, and calendar moves</li><li>Provider capability restrictions surfaced clearly</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Quick entry</h3></div><ul><li>Natural-language input</li><li>Explicit interpretation preview</li><li>Fast keyboard-first correction</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Search depth</h3></div><ul><li>Description and attendee search</li><li>Date, calendar, organizer, and response filters</li><li>Highlighting and keyboard actions</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Mutation reliability</h3></div><ul><li>Update, delete, move, and RSVP queue operations</li><li>Coalescing, ordering, retry, and queue inspection</li><li>Manual retry, discard, and conflict resolution</li></ul></article>
       </div>
       <div class="exit"><strong>Exit condition</strong><span>Ordinary personal calendar management no longer requires opening Google Calendar.</span></div>
     </section>
@@ -458,15 +572,15 @@
     <section id="phase-3" class="phase wrap" data-nav="Phase 3">
       <header class="phase-head">
         <div class="phase-number">03</div>
-        <div><div class="phase-kicker">Meetings</div><h2>Scheduling for real work</h2></div>
+        <div><div class="phase-kicker">Meetings</div><h2>Scheduling for real work</h2><div class="phase-progress"></div></div>
         <p class="phase-summary">Turn the calendar from a personal organizer into a complete workday command center.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card"><div class="work-card__top"><h3>Invitations &amp; RSVP</h3><span class="tag">People</span></div><ul><li>Invitation and response states</li><li>Accept, decline, and tentative mutations</li><li>Invitation notifications</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Meeting links</h3><span class="tag">Join</span></div><ul><li>Create Google Meet conferences</li><li>Parse Meet, Zoom, Teams, phones, and PINs</li><li>Prominent Join action at the right time</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Availability</h3><span class="tag">Coordinate</span></div><ul><li>Google FreeBusy integration</li><li>Shared availability timeline</li><li>Find common meeting windows</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Work event types</h3><span class="tag">Google</span></div><ul><li>Focus time and out-of-office</li><li>Working location</li><li>Capability-aware controls for API limitations</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Reminders &amp; snoozing</h3><span class="tag">Service</span></div><ul><li>Background reminder scheduling</li><li>Open, Join, Snooze, and Dismiss actions</li><li>Persistent snooze and delivery state</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Invitations &amp; RSVP</h3></div><ul><li>Invitation and response states</li><li>Accept, decline, and tentative mutations</li><li>Invitation notifications</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Meeting links</h3></div><ul><li>Create Google Meet conferences</li><li>Parse Meet, Zoom, Teams, phones, and PINs</li><li>Prominent Join action at the right time</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Availability</h3></div><ul><li>Google FreeBusy integration</li><li>Shared availability timeline</li><li>Find common meeting windows</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Work event types</h3></div><ul><li>Focus time and out-of-office</li><li>Working location</li><li>Capability-aware controls for API limitations</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Reminders &amp; snoozing</h3></div><ul><li>Background reminder scheduling</li><li>Open, Join, Snooze, and Dismiss actions</li><li>Persistent snooze and delivery state</li></ul></article>
       </div>
       <div class="exit"><strong>Exit condition</strong><span>Common work-calendar and meeting workflows are complete without a browser.</span></div>
     </section>
@@ -474,32 +588,32 @@
     <section id="phase-4" class="phase wrap" data-nav="Phase 4">
       <header class="phase-head">
         <div class="phase-number">04</div>
-        <div><div class="phase-kicker">Productization</div><h2>Make it unmistakably Omarchy</h2></div>
+        <div><div class="phase-kicker">Productization</div><h2>Make it unmistakably Omarchy</h2><div class="phase-progress"></div></div>
         <p class="phase-summary">Unify shell integration, visual quality, accessibility, diagnostics, performance, and distribution into a release-ready product.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card"><div class="work-card__top"><h3>Shell companion</h3><span class="tag">Native</span></div><ul><li>DBus-based bar plugin</li><li>Agenda, countdown, Join, refresh, and quick add</li><li>Global show/hide and creation shortcuts</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Visual refinement</h3><span class="tag">Beauty</span></div><ul><li>Spacing, rounding, opacity, and border tokens</li><li>Dark and light themes, density modes</li><li>Responsive layouts and purposeful motion</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Accessibility</h3><span class="tag">Everyone</span></div><ul><li>Complete keyboard access and focus order</li><li>Accessible roles, labels, and screen readers</li><li>Contrast and large-font resilience</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Onboarding</h3><span class="tag">Clarity</span></div><ul><li>First-run tour and OAuth guidance</li><li>Account health and actionable errors</li><li>Redacted diagnostics export</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Performance</h3><span class="tag">Fast</span></div><ul><li>Cold start and memory profiling</li><li>Large-calendar model virtualization</li><li>Database, search, and service endurance</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>Packaging</h3><span class="tag">Ship</span></div><ul><li>Arch PKGBUILD and production paths</li><li>Clean install, upgrade, and uninstall</li><li>Versioning, CI, changelog, and releases</li></ul></article>
-        <article class="work-card work-card--full"><div class="work-card__top"><h3>Multi-account support</h3><span class="tag">Depth</span></div><ul><li>Connect multiple Google identities, group calendars by account, route mutations correctly, and make account-level health obvious without cluttering the daily experience.</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Shell companion</h3></div><ul><li>DBus-based bar plugin</li><li>Agenda, countdown, Join, refresh, and quick add</li><li>Global show/hide and creation shortcuts</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Visual refinement</h3></div><ul><li>Spacing, rounding, opacity, and border tokens</li><li>Dark and light themes, density modes</li><li>Responsive layouts and purposeful motion</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Accessibility</h3></div><ul><li>Complete keyboard access and focus order</li><li>Accessible roles, labels, and screen readers</li><li>Contrast and large-font resilience</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Onboarding</h3></div><ul><li>First-run tour and OAuth guidance</li><li>Account health and actionable errors</li><li>Redacted diagnostics export</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Performance</h3></div><ul><li>Cold start and memory profiling</li><li>Large-calendar model virtualization</li><li>Database, search, and service endurance</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Packaging</h3></div><ul><li>Arch PKGBUILD and production paths</li><li>Clean install, upgrade, and uninstall</li><li>Versioning, CI, changelog, and releases</li></ul></article>
+        <article class="work-card work-card--full" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Multi-account support</h3></div><ul><li>Connect multiple Google identities, group calendars by account, route mutations correctly, and make account-level health obvious without cluttering the daily experience.</li></ul></article>
       </div>
-      <div class="release-blocker"><div class="release-blocker__flag">External release blocker</div><div><h3>Google verification</h3><p>Production Cloud project, final consent branding, public privacy policy and terms, verified domains, support contact, sensitive-scope verification, production OAuth clients, and a dedicated integration-test account.</p></div></div>
+      <div class="release-blocker" data-roadmap-item data-status="blocked"><div class="release-blocker__flag">External release blocker</div><div><h3>Google verification</h3><p>Production Cloud project, final consent branding, public privacy policy and terms, verified domains, support contact, sensitive-scope verification, production OAuth clients, and a dedicated integration-test account.</p></div></div>
       <div class="exit"><strong>Exit condition</strong><span>The app feels like an Omarchy component rather than a themed third-party calendar.</span></div>
     </section>
 
     <section id="phase-5" class="phase wrap" data-nav="Phase 5">
       <header class="phase-head">
         <div class="phase-number">05</div>
-        <div><div class="phase-kicker">Expansion</div><h2>Beyond Google</h2></div>
+        <div><div class="phase-kicker">Expansion</div><h2>Beyond Google</h2><div class="phase-progress"></div></div>
         <p class="phase-summary">Turn the provider-neutral architecture into real choice without compromising the interface.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card"><div class="work-card__top"><h3>Provider contract</h3><span class="tag">Architecture</span></div><ul><li>Formal provider interface</li><li>Capability flags</li><li>Google isolation behind the contract</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>CalDAV</h3><span class="tag">Standards</span></div><ul><li>Discovery and authentication</li><li>Sync tokens and mutations</li><li>Provider contract coverage</li></ul></article>
-        <article class="work-card"><div class="work-card__top"><h3>iCalendar &amp; local</h3><span class="tag">Portable</span></div><ul><li>ICS import and export</li><li>Subscribed feeds</li><li>Local-only calendars</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Provider contract</h3></div><ul><li>Formal provider interface</li><li>Capability flags</li><li>Google isolation behind the contract</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>CalDAV</h3></div><ul><li>Discovery and authentication</li><li>Sync tokens and mutations</li><li>Provider contract coverage</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>iCalendar &amp; local</h3></div><ul><li>ICS import and export</li><li>Subscribed feeds</li><li>Local-only calendars</li></ul></article>
       </div>
       <div class="exit"><strong>Exit condition</strong><span>The product works with major standards-based services and no longer depends on Google.</span></div>
     </section>
@@ -507,13 +621,13 @@
     <section id="quality" class="phase wrap" data-nav="Quality">
       <header class="phase-head">
         <div class="phase-number">Q</div>
-        <div><div class="phase-kicker">Continuous track</div><h2>Proof, not hope</h2></div>
+        <div><div class="phase-kicker">Continuous track</div><h2>Proof, not hope</h2><div class="phase-progress"></div></div>
         <p class="phase-summary">Correctness and resilience are built alongside each feature, with real APIs and real failure conditions.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Automated correctness</h3><span class="tag">Tests</span></div><ul><li>Every schema migration from every released version</li><li>All-day, multi-day, timezone, and DST boundaries</li><li>Recurrence, exceptions, conflict resolution, and coalescing</li><li>Create, update, delete, RSVP, drag, resize, focus, and undo</li></ul></article>
-        <article class="work-card work-card--wide"><div class="work-card__top"><h3>Integration &amp; failure drills</h3><span class="tag">Resilience</span></div><ul><li>Dedicated Google account for full lifecycle tests</li><li>Offline edits and reconnection</li><li>Termination during every mutation type</li><li>Secret Service, disk, token, quota, and cache failures</li></ul></article>
-        <article class="work-card work-card--full"><div class="work-card__top"><h3>Visual confidence</h3><span class="tag">Beauty</span></div><ul><li>Repeatable snapshots for every primary view across themes, density modes, empty/loading/error states, and 100%, 125%, 150%, and 200% display scaling.</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Automated correctness</h3></div><ul><li>Every schema migration from every released version</li><li>All-day, multi-day, timezone, and DST boundaries</li><li>Recurrence, exceptions, conflict resolution, and coalescing</li><li>Create, update, delete, RSVP, drag, resize, focus, and undo</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Integration &amp; failure drills</h3></div><ul><li>Dedicated Google account for full lifecycle tests</li><li>Offline edits and reconnection</li><li>Termination during every mutation type</li><li>Secret Service, disk, token, quota, and cache failures</li></ul></article>
+        <article class="work-card work-card--full" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Visual confidence</h3></div><ul><li>Repeatable snapshots for every primary view across themes, density modes, empty/loading/error states, and 100%, 125%, 150%, and 200% display scaling.</li></ul></article>
       </div>
     </section>
 
@@ -531,11 +645,65 @@
         <div class="sequence-row"><strong>CalDAV and portable calendars</strong><span>Expand beyond one provider</span></div>
       </div>
     </section>
+
+    <details class="maintenance wrap">
+      <summary>How to maintain this roadmap</summary>
+      <p>Every deliverable card has one status in the HTML: <code>data-status="done"</code>, <code>active</code>, <code>planned</code>, or <code>blocked</code>. Change that one value when work moves, then update <code>data-last-updated</code> on the <code>&lt;body&gt;</code> element. The badges, totals, completion percentage, phase summaries, and filters are calculated automatically. Add new work by copying any card that contains <code>data-roadmap-item</code>.</p>
+    </details>
   </main>
 
-  <footer><div class="wrap"><span>Omarchy Calendar · Product &amp; Engineering Roadmap</span><span>Living document · September 2026</span></div></footer>
+  <footer><div class="wrap"><span>Omarchy Calendar · Product &amp; Engineering Roadmap</span><span>Last updated <time id="last-updated" datetime="2026-09-20">September 20, 2026</time></span></div></footer>
 
   <script>
+    const statusLabels = { done: 'Finished', active: 'In progress', planned: 'Planned', blocked: 'Blocked' };
+    const items = [...document.querySelectorAll('[data-roadmap-item]')];
+
+    items.forEach(item => {
+      const status = item.dataset.status;
+      const host = item.querySelector('.work-card__top, .validation__head');
+      if (host) {
+        const badge = document.createElement('span');
+        badge.className = 'item-status';
+        badge.textContent = statusLabels[status];
+        host.append(badge);
+      }
+    });
+
+    const counts = Object.keys(statusLabels).reduce((result, status) => {
+      result[status] = items.filter(item => item.dataset.status === status).length;
+      return result;
+    }, {});
+    const unfinished = items.length - counts.done;
+    const percent = items.length ? Math.round((counts.done / items.length) * 100) : 0;
+    document.querySelector('[data-count="done"]').textContent = counts.done;
+    document.querySelector('[data-count="active"]').textContent = counts.active;
+    document.querySelector('[data-count="unfinished"]').textContent = unfinished;
+    document.querySelector('[data-count="percent"]').textContent = percent;
+    document.querySelector('.progress-fill').style.width = `${percent}%`;
+
+    document.querySelectorAll('.phase').forEach(phase => {
+      const phaseItems = [...phase.querySelectorAll('[data-roadmap-item]')];
+      const finished = phaseItems.filter(item => item.dataset.status === 'done').length;
+      const active = phaseItems.filter(item => item.dataset.status === 'active').length;
+      const summary = phase.querySelector('.phase-progress');
+      if (summary && phaseItems.length) summary.textContent = `${finished} of ${phaseItems.length} finished${active ? ` · ${active} in progress` : ''}`;
+    });
+
+    const filterButtons = [...document.querySelectorAll('[data-filter]')];
+    filterButtons.forEach(button => button.addEventListener('click', () => {
+      const filter = button.dataset.filter;
+      filterButtons.forEach(candidate => candidate.setAttribute('aria-pressed', String(candidate === button)));
+      items.forEach(item => {
+        const matches = filter === 'all' || item.dataset.status === filter || (filter === 'unfinished' && item.dataset.status !== 'done');
+        item.hidden = !matches;
+      });
+    }));
+
+    const updated = new Date(`${document.body.dataset.lastUpdated}T12:00:00`);
+    const updatedLabel = document.querySelector('#last-updated');
+    updatedLabel.dateTime = document.body.dataset.lastUpdated;
+    updatedLabel.textContent = new Intl.DateTimeFormat('en', { dateStyle: 'long' }).format(updated);
+
     const links = [...document.querySelectorAll('.phase-nav a')];
     const targets = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
     const observer = new IntersectionObserver(entries => {

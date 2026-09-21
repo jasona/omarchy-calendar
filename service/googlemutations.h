@@ -34,7 +34,9 @@ private:
     QString m_accountId;
     QString m_accessToken;
     QString m_currentMutationId;
+    QString m_currentOperation;
     QString m_currentGoogleEventId;
+    QString m_currentBaseEtag;
     QString m_lastError;
     QString m_retryAt;
     bool m_busy = false;

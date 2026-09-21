@@ -20,6 +20,7 @@ SQLite schema can evolve independently.
 | `DisconnectGoogle()` | Removes the Google account, its cached calendars and events, and its refresh token from Secret Service |
 | `SetCalendarSelected(calendarId, selected)` | Pauses or resumes a Google calendar, updates visible queries and the compatibility feed, and syncs when resumed |
 | `CreateEvent(eventJson)` | Optimistically stores a new event and atomically queues its Google create mutation; returns its local event ID |
+| `UpdateEvent(eventJson)` | Optimistically updates one event and atomically queues or coalesces its Google update mutation |
 | `SyncNow()` | Starts Calendar List and Events synchronization when an authenticated Google access token is available |
 | `Reload()` | Transactionally re-import the compatibility feed |
 

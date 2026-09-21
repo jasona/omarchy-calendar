@@ -169,6 +169,20 @@ QString CalendarService::CreateEvent(const QString &eventJson)
     return eventId;
 }
 
+bool CalendarService::UpdateEvent(const QString &eventJson)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(eventJson.toUtf8());
+    if (!document.isObject() || !m_database.updatePendingEvent(document.object()))
+        return false;
+    if (!m_database.exportCompatibilityFeed(m_feedPath))
+        qWarning().noquote() << m_database.lastError();
+    ensureWatching();
+    emit EventsChanged();
+    if (m_googleAuth.writeAccessAvailable())
+        m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+    return true;
+}
+
 bool CalendarService::SyncNow()
 {
     return m_googleSync.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());

@@ -123,6 +123,21 @@ ApplicationWindow {
         eventEditor.openForDate(currentView === "day" ? dayDate : new Date())
     }
 
+    function eventEditable(eventData) {
+        if (!eventData || !eventData.id || eventData.source === "compat-json"
+                || eventData.allDay || eventData.multiDay)
+            return false
+        return calendarList.some(function(calendar) {
+            return calendar.id === eventData.calendarId
+                    && (calendar.accessRole === "owner" || calendar.accessRole === "writer")
+        })
+    }
+
+    function editSelectedEvent() {
+        if (eventEditable(selectedEvent))
+            eventEditor.openForEvent(selectedEvent)
+    }
+
     function calendarVisible(calendarId) {
         return hiddenCalendarIds.indexOf(calendarId) < 0
     }
@@ -157,6 +172,7 @@ ApplicationWindow {
     Shortcut { sequence: "/"; enabled: window.currentView !== "search"; onActivated: window.currentView = "search" }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.currentView = "settings" }
     Shortcut { sequence: "N"; enabled: !eventEditor.opened; onActivated: window.openEventEditor() }
+    Shortcut { sequence: "E"; enabled: !eventEditor.opened && window.eventEditable(window.selectedEvent); onActivated: window.editSelectedEvent() }
     Shortcut { sequence: "Escape"; enabled: window.currentView === "search" || window.currentView === "settings"; onActivated: window.currentView = "week" }
 
     Rectangle {
@@ -449,8 +465,14 @@ ApplicationWindow {
                         Item { width: 1; height: 4 }
                         CalendarButton {
                             width: parent.width
-                            text: "Open in calendar"
+                            text: "Edit event"
                             selected: true
+                            enabled: window.eventEditable(window.selectedEvent)
+                            onClicked: window.editSelectedEvent()
+                        }
+                        CalendarButton {
+                            width: parent.width
+                            text: "Open in calendar"
                             enabled: !!window.selectedEvent.eventUrl
                             onClicked: Qt.openUrlExternally(window.selectedEvent.eventUrl)
                         }
@@ -471,11 +493,14 @@ ApplicationWindow {
         focus: true
         padding: 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property var editingEvent: ({})
+        property bool editing: !!editingEvent.id
         property var writableCalendars: window.calendarList.filter(function(calendar) {
             return calendar.accessRole === "owner" || calendar.accessRole === "writer"
         })
 
         function openForDate(date) {
+            editingEvent = ({})
             let start = new Date(date)
             let now = new Date()
             start.setHours(date.toDateString() === now.toDateString() ? now.getHours() + 1 : 9, 0, 0, 0)
@@ -491,6 +516,54 @@ ApplicationWindow {
             titleField.forceActiveFocus()
         }
 
+        function openForEvent(eventData) {
+            editingEvent = eventData
+            titleField.text = eventData.title || ""
+            locationField.text = eventData.location || ""
+            descriptionField.text = eventData.description || ""
+            let start = new Date(eventData.startMs)
+            let end = new Date(eventData.endMs)
+            dateField.text = Qt.formatDate(start, "yyyy-MM-dd")
+            startField.text = Qt.formatTime(start, "HH:mm")
+            endField.text = Qt.formatTime(end, "HH:mm")
+            errorText.text = ""
+            for (let index = 0; index < writableCalendars.length; ++index) {
+                if (writableCalendars[index].id === eventData.calendarId) {
+                    calendarField.currentIndex = index
+                    break
+                }
+            }
+            open()
+            titleField.forceActiveFocus()
+        }
+
+        function saveEvent() {
+            let parts = dateField.text.split("-")
+            let startParts = startField.text.split(":")
+            let endParts = endField.text.split(":")
+            if (parts.length !== 3 || startParts.length !== 2 || endParts.length !== 2) {
+                errorText.text = "Enter the date as YYYY-MM-DD and times as HH:MM."
+                return
+            }
+            let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(startParts[0]), Number(startParts[1]))
+            let end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(endParts[0]), Number(endParts[1]))
+            let calendar = writableCalendars[calendarField.currentIndex]
+            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: false, timeZone: editing ? (editingEvent.timeZone || calendar.timeZone || "") : (calendar.timeZone || "") }
+            if (editing)
+                payload.id = editingEvent.id
+            let saved = editing ? eventStore.updateEvent(payload) : !!eventStore.createEvent(payload)
+            if (!saved) {
+                errorText.text = end <= start ? "The end time must be after the start time." : "The event could not be saved."
+                return
+            }
+            if (editing)
+                window.selectedEvent = Object.assign({}, window.selectedEvent, payload)
+            close()
+            window.refreshFeedMetadata()
+        }
+
+        Shortcut { sequence: "Ctrl+Return"; enabled: eventEditor.opened && saveButton.enabled; onActivated: eventEditor.saveEvent() }
+
         background: Rectangle {
             radius: 18
             color: theme.backgroundDeep
@@ -501,10 +574,10 @@ ApplicationWindow {
         ColumnLayout {
             anchors { fill: parent; margins: 26 }
             spacing: 14
-            Text { text: "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
-            Text { text: "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Text { text: eventEditor.editing ? "Edit event" : "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
+            Text { text: eventEditor.editing ? "Changes are saved locally first, then synchronized with Google." : "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
-            ThemedComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name" }
+            ThemedComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name"; enabled: !eventEditor.editing }
             RowLayout {
                 Layout.fillWidth: true
                 ThemedTextField { id: dateField; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD" }
@@ -520,28 +593,11 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 CalendarButton { text: "Cancel"; onClicked: eventEditor.close() }
                 CalendarButton {
-                    text: "Create event"
+                    id: saveButton
+                    text: eventEditor.editing ? "Save changes" : "Create event"
                     selected: true
                     enabled: titleField.text.trim().length > 0 && calendarField.currentIndex >= 0
-                    onClicked: {
-                        let parts = dateField.text.split("-")
-                        let startParts = startField.text.split(":")
-                        let endParts = endField.text.split(":")
-                        if (parts.length !== 3 || startParts.length !== 2 || endParts.length !== 2) {
-                            errorText.text = "Enter the date as YYYY-MM-DD and times as HH:MM."
-                            return
-                        }
-                        let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(startParts[0]), Number(startParts[1]))
-                        let end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(endParts[0]), Number(endParts[1]))
-                        let calendar = eventEditor.writableCalendars[calendarField.currentIndex]
-                        let id = eventStore.createEvent({ calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: false, timeZone: calendar.timeZone || "" })
-                        if (!id) {
-                            errorText.text = end <= start ? "The end time must be after the start time." : "The event could not be saved."
-                            return
-                        }
-                        eventEditor.close()
-                        window.refreshFeedMetadata()
-                    }
+                    onClicked: eventEditor.saveEvent()
                 }
             }
         }

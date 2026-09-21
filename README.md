@@ -46,6 +46,12 @@ responses replace the temporary local identity atomically, and transient
 failures remain queued with bounded retry rather than losing the event. Stable
 client-assigned Google IDs make retries idempotent across process restarts.
 
+Select a writable event and choose **Edit event**, or press `E`, to reopen the
+composer with its current title, time, location, and description. Changes are
+applied locally in one transaction and queued for Google with the event ETag.
+Edits made before a new event uploads are folded into its existing create
+operation, while subsequent edits use an authenticated Google `PATCH`.
+
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development
 OAuth client setup is documented in
