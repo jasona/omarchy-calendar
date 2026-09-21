@@ -1,6 +1,7 @@
 #include "eventstore.h"
 #include "preferences.h"
 #include "themeprovider.h"
+#include "timezonehelper.h"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -19,10 +20,12 @@ int main(int argc, char *argv[])
     ThemeProvider theme;
     EventStore eventStore;
     Preferences preferences;
+    TimeZoneHelper timeZones;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
     engine.rootContext()->setContextProperty(QStringLiteral("eventStore"), &eventStore);
     engine.rootContext()->setContextProperty(QStringLiteral("preferences"), &preferences);
+    engine.rootContext()->setContextProperty(QStringLiteral("timeZones"), &timeZones);
     engine.load(QUrl(QStringLiteral("qrc:/qml/App.qml")));
 
     if (engine.rootObjects().isEmpty())

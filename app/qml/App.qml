@@ -88,8 +88,10 @@ ApplicationWindow {
             return ""
         if (eventData.allDay)
             return "All day"
-        return Qt.formatTime(new Date(eventData.startMs), "h:mm AP")
-                + " – " + Qt.formatTime(new Date(eventData.endMs), "h:mm AP")
+        let zone = eventData.timeZone || timeZones.systemTimeZoneId
+        let start = timeZones.wallTime(eventData.startMs, zone)
+        let end = timeZones.wallTime(eventData.endMs, zone)
+        return start.timeLabel + " – " + end.timeLabel + "  " + start.abbreviation
     }
 
     function formatEventDate(eventData) {
@@ -97,15 +99,26 @@ ApplicationWindow {
             return ""
         let start = eventData.allDay
                   ? new Date(eventData.allDayStartDate + "T12:00:00")
-                  : new Date(eventData.startMs)
+                  : new Date(timeZones.wallTime(eventData.startMs, eventData.timeZone || timeZones.systemTimeZoneId).date + "T12:00:00")
         let end = eventData.allDay
                 ? new Date(eventData.allDayEndDate + "T12:00:00")
-                : new Date(eventData.endMs - 1)
+                : new Date(timeZones.wallTime(eventData.endMs - 1, eventData.timeZone || timeZones.systemTimeZoneId).date + "T12:00:00")
         if (eventData.allDay)
             end.setDate(end.getDate() - 1)
         if (Qt.formatDate(start, "yyyy-MM-dd") === Qt.formatDate(end, "yyyy-MM-dd"))
             return Qt.formatDate(start, "dddd, MMMM d")
         return Qt.formatDate(start, "MMM d") + " – " + Qt.formatDate(end, "MMM d, yyyy")
+    }
+
+    function localEquivalent(eventData) {
+        if (!eventData || !eventData.id || eventData.allDay
+                || !eventData.timeZone || eventData.timeZone === timeZones.systemTimeZoneId)
+            return ""
+        let start = timeZones.wallTime(eventData.startMs, timeZones.systemTimeZoneId)
+        let end = timeZones.wallTime(eventData.endMs, timeZones.systemTimeZoneId)
+        let dates = start.date === end.date ? start.dateLabel : start.dateLabel + " – " + end.dateLabel
+        return "Local time · " + dates + " · " + start.timeLabel + " – " + end.timeLabel
+                + "  " + start.abbreviation
     }
 
     function refreshFeedMetadata() {
@@ -539,6 +552,12 @@ ApplicationWindow {
                             spacing: 5
                             Text { text: window.formatEventDate(window.selectedEvent).toUpperCase(); color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 2); font.weight: Font.Bold; font.letterSpacing: 0.8 }
                             Text { text: window.formatEventTime(window.selectedEvent); color: theme.foreground; font.pixelSize: theme.baseFontSize + 1 }
+                            Text {
+                                visible: text.length > 0
+                                text: window.localEquivalent(window.selectedEvent)
+                                color: theme.accent
+                                font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                            }
                         }
 
                         Rectangle { width: parent.width; height: 1; color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.09) }
@@ -548,6 +567,7 @@ ApplicationWindow {
                             Text { text: window.selectedEvent.location || "No location"; color: theme.foreground; font.pixelSize: theme.baseFontSize }
                             Text { text: window.selectedEvent.calendarName || ""; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
                             Text { text: window.selectedEvent.allDay ? "All-day event" : "Scheduled event"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+                            Text { visible: !window.selectedEvent.allDay && !!window.selectedEvent.timeZone; text: window.selectedEvent.timeZone || ""; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
                         }
 
                         Text {
@@ -650,7 +670,7 @@ ApplicationWindow {
         parent: Overlay.overlay
         anchors.centerIn: parent
         width: 470
-        height: 640
+        height: Math.min(700, window.height - 28)
         modal: true
         focus: true
         padding: 0
@@ -660,6 +680,44 @@ ApplicationWindow {
         property var writableCalendars: window.calendarList.filter(function(calendar) {
             return calendar.accessRole === "owner" || calendar.accessRole === "writer"
         })
+        property var timezoneOptions: timeZones.options(Date.now(), preferences.recentTimeZones)
+        property bool preferLaterStart: false
+        property bool preferLaterEnd: false
+        property var startResolution: allDayToggle.checked ? ({ valid: true })
+            : timeZones.resolveWallTime(dateField.text, startField.text,
+                                        selectedTimeZone(), preferLaterStart)
+        property var endResolution: allDayToggle.checked ? ({ valid: true })
+            : timeZones.resolveWallTime(endDateField.text, endField.text,
+                                        selectedTimeZone(), preferLaterEnd)
+
+        function selectedTimeZone() {
+            return timezoneField.currentIndex >= 0 && timezoneField.currentIndex < timezoneOptions.length
+                    ? timezoneOptions[timezoneField.currentIndex].id : timeZones.systemTimeZoneId
+        }
+
+        function selectTimeZone(zoneId) {
+            let target = zoneId || timeZones.systemTimeZoneId
+            for (let index = 0; index < timezoneOptions.length; ++index) {
+                if (timezoneOptions[index].id === target) {
+                    timezoneField.currentIndex = index
+                    return
+                }
+            }
+            timezoneField.currentIndex = 0
+        }
+
+        function selectCalendarTimeZone() {
+            if (calendarField.currentIndex < 0 || calendarField.currentIndex >= writableCalendars.length)
+                return
+            selectTimeZone(writableCalendars[calendarField.currentIndex].timeZone)
+        }
+
+        function validDateText(value) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+            let parts = value.split("-")
+            let date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12)
+            return Qt.formatDate(date, "yyyy-MM-dd") === value
+        }
 
         function openForDate(date) {
             editingEvent = ({})
@@ -675,6 +733,9 @@ ApplicationWindow {
             startField.text = Qt.formatTime(start, "HH:mm")
             let end = new Date(start.getTime() + 60 * 60 * 1000)
             endField.text = Qt.formatTime(end, "HH:mm")
+            preferLaterStart = false
+            preferLaterEnd = false
+            selectCalendarTimeZone()
             errorText.text = ""
             open()
             titleField.forceActiveFocus()
@@ -685,15 +746,18 @@ ApplicationWindow {
             titleField.text = eventData.title || ""
             locationField.text = eventData.location || ""
             descriptionField.text = eventData.description || ""
-            let start = new Date(eventData.startMs)
-            let end = new Date(eventData.endMs)
+            let zone = eventData.timeZone || timeZones.systemTimeZoneId
+            let start = timeZones.wallTime(eventData.startMs, zone)
+            let end = timeZones.wallTime(eventData.endMs, zone)
             allDayToggle.checked = !!eventData.allDay
-            dateField.text = eventData.allDay ? eventData.allDayStartDate : Qt.formatDate(start, "yyyy-MM-dd")
-            let inclusiveEnd = eventData.allDay ? new Date(eventData.allDayEndDate + "T12:00:00") : end
+            dateField.text = eventData.allDay ? eventData.allDayStartDate : start.date
+            let inclusiveEnd = new Date(eventData.allDayEndDate + "T12:00:00")
             if (eventData.allDay) inclusiveEnd.setDate(inclusiveEnd.getDate() - 1)
-            endDateField.text = Qt.formatDate(inclusiveEnd, "yyyy-MM-dd")
-            startField.text = Qt.formatTime(start, "HH:mm")
-            endField.text = Qt.formatTime(end, "HH:mm")
+            endDateField.text = eventData.allDay ? Qt.formatDate(inclusiveEnd, "yyyy-MM-dd") : end.date
+            startField.text = start.time
+            endField.text = end.time
+            preferLaterStart = start.ambiguous && start.occurrence === 2
+            preferLaterEnd = end.ambiguous && end.occurrence === 2
             errorText.text = ""
             for (let index = 0; index < writableCalendars.length; ++index) {
                 if (writableCalendars[index].id === eventData.calendarId) {
@@ -701,38 +765,53 @@ ApplicationWindow {
                     break
                 }
             }
+            selectTimeZone(zone)
             open()
             titleField.forceActiveFocus()
         }
 
         function saveEvent() {
-            let parts = dateField.text.split("-")
-            let endDateParts = endDateField.text.split("-")
-            let startParts = startField.text.split(":")
-            let endParts = endField.text.split(":")
-            if (parts.length !== 3 || endDateParts.length !== 3
-                    || (!allDayToggle.checked && (startParts.length !== 2 || endParts.length !== 2))) {
-                errorText.text = "Enter dates as YYYY-MM-DD and times as HH:MM."
+            let calendar = writableCalendars[calendarField.currentIndex]
+            let zone = selectedTimeZone()
+            let startMs = 0
+            let endMs = 0
+            let allDayEndDate = ""
+            if (allDayToggle.checked) {
+                if (!validDateText(dateField.text) || !validDateText(endDateField.text)) {
+                    errorText.text = "Enter valid dates as YYYY-MM-DD."
+                    return
+                }
+                let startDate = new Date(dateField.text + "T12:00:00")
+                let inclusiveEnd = new Date(endDateField.text + "T12:00:00")
+                inclusiveEnd.setDate(inclusiveEnd.getDate() + 1)
+                startMs = startDate.getTime()
+                endMs = inclusiveEnd.getTime()
+                allDayEndDate = Qt.formatDate(inclusiveEnd, "yyyy-MM-dd")
+            } else {
+                if (!startResolution.valid || !endResolution.valid) {
+                    errorText.text = !startResolution.valid ? startResolution.error : endResolution.error
+                    return
+                }
+                startMs = startResolution.epochMs
+                endMs = endResolution.epochMs
+            }
+            if (endMs <= startMs) {
+                errorText.text = "The end time must be after the start time."
                 return
             }
-            let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]),
-                                 allDayToggle.checked ? 0 : Number(startParts[0]), allDayToggle.checked ? 0 : Number(startParts[1]))
-            let end = new Date(Number(endDateParts[0]), Number(endDateParts[1]) - 1, Number(endDateParts[2]),
-                               allDayToggle.checked ? 0 : Number(endParts[0]), allDayToggle.checked ? 0 : Number(endParts[1]))
-            if (allDayToggle.checked) end.setDate(end.getDate() + 1)
-            let calendar = writableCalendars[calendarField.currentIndex]
-            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: allDayToggle.checked, timeZone: editing ? (editingEvent.timeZone || calendar.timeZone || "") : (calendar.timeZone || "") }
+            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: startMs, endMs: endMs, allDay: allDayToggle.checked, timeZone: zone }
             if (allDayToggle.checked) {
                 payload.allDayStartDate = dateField.text
-                payload.allDayEndDate = Qt.formatDate(end, "yyyy-MM-dd")
+                payload.allDayEndDate = allDayEndDate
             }
             if (editing)
                 payload.id = editingEvent.id
             let saved = editing ? eventStore.updateEvent(payload) : !!eventStore.createEvent(payload)
             if (!saved) {
-                errorText.text = end <= start ? "The end time must be after the start time." : "The event could not be saved."
+                errorText.text = endMs <= startMs ? "The end time must be after the start time." : "The event could not be saved."
                 return
             }
+            preferences.rememberTimeZone(zone)
             if (editing)
                 window.selectedEvent = Object.assign({}, window.selectedEvent, payload)
             close()
@@ -754,7 +833,14 @@ ApplicationWindow {
             Text { text: eventEditor.editing ? "Edit event" : "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
             Text { text: eventEditor.editing ? "Changes are saved locally first, then synchronized with Google." : "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
-            ThemedComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name"; enabled: !eventEditor.editing }
+            ThemedComboBox {
+                id: calendarField
+                Layout.fillWidth: true
+                model: eventEditor.writableCalendars
+                textRole: "name"
+                enabled: !eventEditor.editing
+                onActivated: if (!eventEditor.editing) eventEditor.selectCalendarTimeZone()
+            }
             CalendarButton {
                 id: allDayToggle
                 checkable: true
@@ -771,6 +857,78 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 ThemedTextField { id: endDateField; Layout.fillWidth: true; placeholderText: "End date · YYYY-MM-DD" }
                 ThemedTextField { id: endField; visible: !allDayToggle.checked; Layout.preferredWidth: visible ? 92 : 0; placeholderText: "10:00" }
+            }
+            ThemedComboBox {
+                id: timezoneField
+                visible: !allDayToggle.checked
+                Layout.fillWidth: true
+                model: eventEditor.timezoneOptions
+                textRole: "label"
+                onActivated: {
+                    eventEditor.preferLaterStart = false
+                    eventEditor.preferLaterEnd = false
+                }
+            }
+            Text {
+                visible: !allDayToggle.checked
+                Layout.fillWidth: true
+                text: {
+                    if (!eventEditor.startResolution.valid)
+                        return eventEditor.startResolution.error || ""
+                    let source = eventEditor.startResolution.timeLabel + " "
+                               + eventEditor.startResolution.abbreviation + " · "
+                               + eventEditor.startResolution.offsetLabel
+                    if (!eventEditor.startResolution.isLocal)
+                        source += "  →  Local " + eventEditor.startResolution.localDateLabel
+                                + " · " + eventEditor.startResolution.localTimeLabel + " "
+                                + eventEditor.startResolution.localAbbreviation
+                    return source
+                }
+                color: eventEditor.startResolution.valid ? theme.foregroundMuted : theme.red
+                font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                visible: !allDayToggle.checked && eventEditor.startResolution.valid
+                         && eventEditor.startResolution.ambiguous
+                Layout.fillWidth: true
+                Text {
+                    text: "Start time repeats:"
+                    color: theme.foregroundMuted
+                    font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                }
+                Item { Layout.fillWidth: true }
+                CalendarButton {
+                    text: "First"
+                    selected: !eventEditor.preferLaterStart
+                    onClicked: eventEditor.preferLaterStart = false
+                }
+                CalendarButton {
+                    text: "Second"
+                    selected: eventEditor.preferLaterStart
+                    onClicked: eventEditor.preferLaterStart = true
+                }
+            }
+            RowLayout {
+                visible: !allDayToggle.checked && eventEditor.endResolution.valid
+                         && eventEditor.endResolution.ambiguous
+                Layout.fillWidth: true
+                Text {
+                    text: "End time repeats:"
+                    color: theme.foregroundMuted
+                    font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                }
+                Item { Layout.fillWidth: true }
+                CalendarButton {
+                    text: "First"
+                    selected: !eventEditor.preferLaterEnd
+                    onClicked: eventEditor.preferLaterEnd = false
+                }
+                CalendarButton {
+                    text: "Second"
+                    selected: eventEditor.preferLaterEnd
+                    onClicked: eventEditor.preferLaterEnd = true
+                }
             }
             ThemedTextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
             ThemedTextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)" }

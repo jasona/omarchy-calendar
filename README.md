@@ -69,6 +69,13 @@ through UTC, while timed events that cross midnight appear on each covered day.
 All-day events can be dragged across days in Week and Month, moved with the same
 keyboard shortcuts, and converted to or from scheduled time in the composer.
 
+Timed events can use any IANA timezone from the composer. Wall times are resolved
+in the selected zone before they are saved, recent choices stay at the top of the
+picker, and the preview shows the equivalent local date and time. Nonexistent
+spring-forward times are rejected, repeated fall-back times offer first and
+second occurrence choices, and the inspector preserves the event's original zone
+while showing a local-time equivalent when it differs.
+
 Choose **Delete event** or press `Delete` to remove a writable event
 immediately. A themed notification offers Undo for six seconds; Google does not
 receive the deletion until that window closes. The durable delete queue treats
@@ -119,4 +126,5 @@ cd ..
 ./tests/test-google-delete-undo.sh
 ./tests/test-event-adjustment.sh
 ./tests/test-all-day-multiday.sh
+./tests/test-timezone-contract.sh
 ```

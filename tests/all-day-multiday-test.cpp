@@ -74,7 +74,7 @@ int main(int argc, char **argv)
         || rebasedRows.at(0).toObject().value("allDayEndDate") != QStringLiteral("2026-03-11")) return 10;
 
     const qint64 timedStart = QDateTime(QDate(2026, 3, 9), QTime(22, 0), zone).toMSecsSinceEpoch();
-    const qint64 timedEnd = QDateTime(QDate(2026, 3, 10), QTime(2, 0), zone).toMSecsSinceEpoch();
+    const qint64 timedEnd = QDateTime(QDate(2026, 3, 10), QTime(4, 0), zone).toMSecsSinceEpoch();
     if (!database.updatePendingEvent(QJsonObject {
         { "id", "spring-forward" }, { "calendarId", calendarId }, { "title", "Overnight" },
         { "startMs", double(timedStart) }, { "endMs", double(timedEnd) }, { "allDay", false },

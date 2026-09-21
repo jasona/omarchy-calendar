@@ -286,6 +286,45 @@ bool Database::migrate()
         }
     }
 
+    QSqlQuery versionSix(m_database);
+    if (!versionSix.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=6"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionSix.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionSix.next()) {
+        const QStringList versionSixStatements {
+            QStringLiteral(
+                "DELETE FROM events WHERE all_day=0 AND rowid NOT IN ("
+                "SELECT MIN(rowid) FROM events WHERE all_day=0 GROUP BY calendar_id,provider_event_id)"),
+            QStringLiteral(
+                "UPDATE events SET date_key=date(start_ms / 1000,'unixepoch','localtime') WHERE all_day=0"),
+            QStringLiteral(
+                "WITH RECURSIVE days(calendar_id,provider_event_id,date_key,last_date) AS ("
+                "SELECT calendar_id,provider_event_id,date(date_key,'+1 day'),"
+                "date((end_ms - 1) / 1000,'unixepoch','localtime') FROM events WHERE all_day=0 "
+                "UNION ALL SELECT calendar_id,provider_event_id,date(date_key,'+1 day'),last_date "
+                "FROM days WHERE date_key<last_date) "
+                "INSERT INTO events(provider_event_id,date_key,calendar_id,start_ms,end_ms,all_day,title,"
+                "description,location,event_url,provider_uid,time_zone,status,transparency,etag,"
+                "provider_updated_at,raw_json,source,all_day_start_date,all_day_end_date) "
+                "SELECT e.provider_event_id,d.date_key,e.calendar_id,e.start_ms,e.end_ms,e.all_day,e.title,"
+                "e.description,e.location,e.event_url,e.provider_uid,e.time_zone,e.status,e.transparency,e.etag,"
+                "e.provider_updated_at,e.raw_json,e.source,e.all_day_start_date,e.all_day_end_date "
+                "FROM days d JOIN events e ON e.calendar_id=d.calendar_id "
+                "AND e.provider_event_id=d.provider_event_id AND e.all_day=0 WHERE d.date_key<=d.last_date"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionSixStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
     if (!m_database.commit()) {
         setError(QStringLiteral("Migration transaction could not commit"), m_database.lastError().text());
         return false;
@@ -503,7 +542,7 @@ QJsonDocument Database::eventsForRange(const QString &firstDate, const QString &
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
         "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
-        "e.time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
+        "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "
         "AND span.provider_event_id=e.provider_event_id) AS day_count "
         "FROM events e JOIN calendars c ON c.id=e.calendar_id "
@@ -703,9 +742,9 @@ QString Database::createPendingEvent(const QJsonObject &event)
     const QString allDayStart = allDay ? event.value("allDayStartDate").toString() : QStringLiteral("");
     const QString allDayEnd = allDay ? event.value("allDayEndDate").toString() : QStringLiteral("");
     const QDate firstDate = allDay ? QDate::fromString(allDayStart, Qt::ISODate)
-                                   : QDateTime::fromMSecsSinceEpoch(startMs, zone).date();
+                                   : QDateTime::fromMSecsSinceEpoch(startMs).date();
     const QDate lastDate = allDay ? QDate::fromString(allDayEnd, Qt::ISODate).addDays(-1)
-                                  : QDateTime::fromMSecsSinceEpoch(endMs - 1, zone).date();
+                                  : QDateTime::fromMSecsSinceEpoch(endMs - 1).date();
     if (!firstDate.isValid() || !lastDate.isValid() || lastDate < firstDate) {
         setError("Event could not be created", "date range is invalid");
         return {};
@@ -789,9 +828,9 @@ bool Database::updatePendingEvent(const QJsonObject &event)
     const QString allDayStart = allDay ? event.value(QStringLiteral("allDayStartDate")).toString() : QStringLiteral("");
     const QString allDayEnd = allDay ? event.value(QStringLiteral("allDayEndDate")).toString() : QStringLiteral("");
     const QDate firstDate = allDay ? QDate::fromString(allDayStart, Qt::ISODate)
-                                   : QDateTime::fromMSecsSinceEpoch(startMs, zone).date();
+                                   : QDateTime::fromMSecsSinceEpoch(startMs).date();
     const QDate lastDate = allDay ? QDate::fromString(allDayEnd, Qt::ISODate).addDays(-1)
-                                  : QDateTime::fromMSecsSinceEpoch(endMs - 1, zone).date();
+                                  : QDateTime::fromMSecsSinceEpoch(endMs - 1).date();
     if (!firstDate.isValid() || !lastDate.isValid() || lastDate < firstDate) {
         setError(QStringLiteral("Event could not be updated"), QStringLiteral("date range is invalid"));
         return false;
@@ -1320,8 +1359,8 @@ bool Database::rebaseUpdateMutation(const QString &mutationId, const QJsonObject
         local.insert(QStringLiteral("startMs"), double(mergedStartMs));
         local.insert(QStringLiteral("endMs"), double(mergedEndMs));
     } else {
-        firstDate = QDateTime::fromMSecsSinceEpoch(mergedStartMs, zone).date();
-        lastDate = QDateTime::fromMSecsSinceEpoch(mergedEndMs - 1, zone).date();
+        firstDate = QDateTime::fromMSecsSinceEpoch(mergedStartMs).date();
+        lastDate = QDateTime::fromMSecsSinceEpoch(mergedEndMs - 1).date();
         local.remove(QStringLiteral("allDayStartDate"));
         local.remove(QStringLiteral("allDayEndDate"));
     }
@@ -1598,6 +1637,13 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
         return false;
     }
 
+    QString calendarTimeZone;
+    QSqlQuery calendarZone(m_database);
+    calendarZone.prepare(QStringLiteral("SELECT time_zone FROM calendars WHERE id=?"));
+    calendarZone.addBindValue(calendarId);
+    if (calendarZone.exec() && calendarZone.next())
+        calendarTimeZone = calendarZone.value(0).toString();
+
     if (fullSync) {
         QSqlQuery clear(m_database);
         clear.prepare(QStringLiteral("DELETE FROM events WHERE calendar_id=? AND source='google'"));
@@ -1655,7 +1701,7 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
         const bool allDay = startValue.contains(QStringLiteral("date"));
         const QString allDayStartDate = allDay ? startValue.value(QStringLiteral("date")).toString() : QStringLiteral("");
         const QString allDayEndDate = allDay ? endValue.value(QStringLiteral("date")).toString() : QStringLiteral("");
-        const QString timeZone = startValue.value(QStringLiteral("timeZone")).toString();
+        const QString timeZone = startValue.value(QStringLiteral("timeZone")).toString(calendarTimeZone);
         const QDateTime start = googleDateTime(startValue, timeZone);
         const QDateTime end = googleDateTime(endValue, timeZone);
         if (!start.isValid() || !end.isValid() || end <= start)
@@ -1663,10 +1709,10 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
 
         QDate firstDate = allDay
             ? QDate::fromString(startValue.value(QStringLiteral("date")).toString(), Qt::ISODate)
-            : start.date();
+            : start.toLocalTime().date();
         QDate lastDate = allDay
             ? QDate::fromString(endValue.value(QStringLiteral("date")).toString(), Qt::ISODate).addDays(-1)
-            : end.addMSecs(-1).date();
+            : end.addMSecs(-1).toLocalTime().date();
         for (QDate date = firstDate; date.isValid() && date <= lastDate; date = date.addDays(1)) {
             int column = 0;
             insert.bindValue(column++, providerEventId);
@@ -1728,7 +1774,7 @@ QJsonDocument Database::searchEvents(const QString &queryText, int limit) const
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
         "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
-        "e.time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
+        "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "
         "AND span.provider_event_id=e.provider_event_id) AS day_count "
         "FROM events e JOIN calendars c ON c.id=e.calendar_id "
@@ -1764,7 +1810,7 @@ QJsonDocument Database::nextEvent() const
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
         "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
-        "e.time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
+        "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "
         "AND span.provider_event_id=e.provider_event_id) AS day_count "
         "FROM events e JOIN calendars c ON c.id=e.calendar_id "

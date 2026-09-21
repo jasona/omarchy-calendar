@@ -43,7 +43,7 @@ dbus-run-session -- bash -c '
   undo_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.UndoDelete missing)"
 
   [[ "$status" == *"\"eventCount\":3"* ]]
-  [[ "$status" == *"\"schemaVersion\":5"* ]]
+  [[ "$status" == *"\"schemaVersion\":6"* ]]
   [[ "$range" == *"Design review"* ]]
   [[ "$range" == *"Conference"* ]]
   [[ "$search" == *"Design review"* ]]
