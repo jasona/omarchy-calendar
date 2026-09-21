@@ -1,0 +1,26 @@
+{
+  "items": [
+    { "id": "timed-1", "status": "cancelled" },
+    {
+      "id": "allday-1",
+      "iCalUID": "allday-1@example.com",
+      "summary": "Conference updated",
+      "status": "confirmed",
+      "etag": "incremental-1",
+      "updated": "2026-09-21T15:00:00Z",
+      "start": { "date": "2026-09-20" },
+      "end": { "date": "2026-09-22" }
+    },
+    {
+      "id": "timed-2",
+      "iCalUID": "timed-2@example.com",
+      "summary": "Planning session",
+      "status": "confirmed",
+      "etag": "incremental-2",
+      "updated": "2026-09-21T16:00:00Z",
+      "start": { "dateTime": "2026-09-21T13:30:00-07:00", "timeZone": "America/Phoenix" },
+      "end": { "dateTime": "2026-09-21T14:15:00-07:00", "timeZone": "America/Phoenix" }
+    }
+  ],
+  "nextSyncToken": "sync-token-2"
+}

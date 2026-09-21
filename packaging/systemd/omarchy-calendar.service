@@ -1,0 +1,13 @@
+[Unit]
+Description=Omarchy Calendar local data service
+
+[Service]
+Type=dbus
+BusName=org.omarchy.Calendar
+EnvironmentFile=-%h/.config/omarchy-calendar/google-oauth.env
+ExecStart=/usr/bin/omarchy-calendar-service
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

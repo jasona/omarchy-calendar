@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Omarchy Calendar
+GenericName=Calendar
+Comment=Native calendar for Omarchy
+Exec=omarchy-calendar
+Icon=org.omarchy.Calendar
+Terminal=false
+Categories=Office;Calendar;
+Keywords=calendar;events;schedule;Google;
+StartupWMClass=org.omarchy.Calendar

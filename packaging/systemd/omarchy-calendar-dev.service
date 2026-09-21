@@ -1,0 +1,14 @@
+[Unit]
+Description=Omarchy Calendar local data service (development build)
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.omarchy.Calendar
+EnvironmentFile=-%h/.config/omarchy-calendar/google-oauth.env
+ExecStart=/home/jasona/Documents/Omarchy/omarchy-calendar/build-service/omarchy-calendar-service
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

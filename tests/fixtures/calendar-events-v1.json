@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "syncedAt": "2026-09-20T12:00:00.000Z",
+  "source": "Synthetic contract fixture",
+  "events": [
+    {
+      "id": "event-one",
+      "calendarId": "personal",
+      "calendarName": "Personal",
+      "color": "#6c8cdb",
+      "dateKey": "2026-09-20",
+      "start": "2026-09-20T16:00:00.000Z",
+      "end": "2026-09-20T17:00:00.000Z",
+      "allDay": false,
+      "title": "Design review",
+      "location": "Studio",
+      "eventUrl": "https://calendar.example/events/one"
+    },
+    {
+      "id": "event-multiday",
+      "calendarId": "personal",
+      "calendarName": "Personal",
+      "color": "#6c8cdb",
+      "dateKey": "2026-09-20",
+      "start": "2026-09-20T07:00:00.000Z",
+      "end": "2026-09-22T07:00:00.000Z",
+      "allDay": true,
+      "title": "Conference",
+      "location": "",
+      "eventUrl": "https://calendar.example/events/conference"
+    },
+    {
+      "id": "event-multiday",
+      "calendarId": "personal",
+      "calendarName": "Personal",
+      "color": "#6c8cdb",
+      "dateKey": "2026-09-21",
+      "start": "2026-09-20T07:00:00.000Z",
+      "end": "2026-09-22T07:00:00.000Z",
+      "allDay": true,
+      "title": "Conference",
+      "location": "",
+      "eventUrl": "https://calendar.example/events/conference"
+    }
+  ]
+}

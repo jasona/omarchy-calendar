@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "primary@example.com",
+      "summary": "Primary",
+      "backgroundColor": "#6c8cdb",
+      "timeZone": "America/Phoenix",
+      "accessRole": "owner",
+      "selected": true
+    },
+    {
+      "id": "holidays@example.com",
+      "summary": "Holidays",
+      "backgroundColor": "#72a5f1",
+      "timeZone": "America/Phoenix",
+      "accessRole": "reader",
+      "selected": false
+    }
+  ]
+}
