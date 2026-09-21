@@ -15,7 +15,7 @@ SQLite schema can evolve independently.
 | `GetAccounts()` | Provider accounts, enabled state, synchronization state, and errors |
 | `GetNextEvent()` | First non-all-day event whose end time is in the future |
 | `GetStatus()` | Schema version, database path, counts, feed timestamp, and last error |
-| `GetProviderStatus()` | Google OAuth state plus synchronization progress, connectivity, last attempt/success, retry timing, and the latest error |
+| `GetProviderStatus()` | Google OAuth state plus synchronization and mutation-upload progress, connectivity, retry timing, pending count, and the latest error |
 | `BeginGoogleAuthorization()` | Starts the loopback OAuth flow; returns false when client credentials or the callback listener are unavailable |
 | `DisconnectGoogle()` | Removes the Google account, its cached calendars and events, and its refresh token from Secret Service |
 | `SetCalendarSelected(calendarId, selected)` | Pauses or resumes a Google calendar, updates visible queries and the compatibility feed, and syncs when resumed |

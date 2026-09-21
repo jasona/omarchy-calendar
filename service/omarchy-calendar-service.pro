@@ -8,6 +8,7 @@ SOURCES += \
     calendarservice.cpp \
     database.cpp \
     googleauth.cpp \
+    googlemutations.cpp \
     googlesync.cpp \
     main.cpp
 
@@ -15,6 +16,7 @@ HEADERS += \
     calendarservice.h \
     database.h \
     googleauth.h \
+    googlemutations.h \
     googlesync.h \
     secretstore.h
 

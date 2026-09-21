@@ -29,8 +29,13 @@ public:
                                 const QString &lastError = {});
     bool setAccountGrantedScopes(const QString &id, const QString &scopes);
     QString accountGrantedScopes(const QString &id) const;
+    bool requeueBlockedMutations(const QString &accountId);
     bool setCalendarSelected(const QString &calendarId, bool selected);
     QString createPendingEvent(const QJsonObject &event);
+    QJsonDocument nextPendingMutation(const QString &accountId) const;
+    bool setMutationState(const QString &mutationId, const QString &state,
+                          const QString &error = {}, bool incrementAttempt = false);
+    bool completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool removeAccount(const QString &id);
     bool setSyncCursor(const QString &accountId, const QString &calendarId,
                        const QString &cursor);

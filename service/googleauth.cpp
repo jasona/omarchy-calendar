@@ -165,6 +165,10 @@ void GoogleAuth::finishAuthorization()
         setError(m_database.lastError());
         return;
     }
+    if (!m_database.requeueBlockedMutations(accountId)) {
+        setError(m_database.lastError());
+        return;
+    }
 
     m_state = QStringLiteral("connected");
     m_currentAccountId = accountId;

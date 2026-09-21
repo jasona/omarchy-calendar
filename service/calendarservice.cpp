@@ -3,6 +3,7 @@
 #include "database.h"
 #include "googleauth.h"
 #include "googlesync.h"
+#include "googlemutations.h"
 
 #include <QFile>
 #include <QJsonDocument>
@@ -10,11 +11,13 @@
 #include <QTimer>
 
 CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, GoogleSync &googleSync,
+                                 GoogleMutations &googleMutations,
                                  QString feedPath, QObject *parent)
     : QObject(parent)
     , m_database(database)
     , m_googleAuth(googleAuth)
     , m_googleSync(googleSync)
+    , m_googleMutations(googleMutations)
     , m_feedPath(std::move(feedPath))
 {
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, &CalendarService::feedChanged);
@@ -34,6 +37,8 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
     connect(&m_googleAuth, &GoogleAuth::accessTokenReady,
             this, [this](const QString &accountId, const QString &accessToken) {
         m_googleSync.start(accountId, accessToken);
+        if (m_googleAuth.writeAccessAvailable())
+            m_googleMutations.start(accountId, accessToken);
         emit ProviderStatusChanged();
     });
     connect(&m_googleSync, &GoogleSync::stateChanged,
@@ -46,6 +51,18 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
                 qWarning().noquote() << m_database.lastError();
             ensureWatching();
             emit EventsChanged();
+        }
+    });
+    connect(&m_googleMutations, &GoogleMutations::stateChanged,
+            this, &CalendarService::ProviderStatusChanged);
+    connect(&m_googleMutations, &GoogleMutations::finished, this, [this](bool changed) {
+        emit ProviderStatusChanged();
+        if (changed) {
+            if (!m_database.exportCompatibilityFeed(m_feedPath))
+                qWarning().noquote() << m_database.lastError();
+            ensureWatching();
+            emit EventsChanged();
+            QTimer::singleShot(1000, this, [this] { SyncNow(); });
         }
     });
     auto *syncTimer = new QTimer(this);
@@ -101,6 +118,7 @@ QString CalendarService::GetProviderStatus() const
 {
     QJsonObject status = m_googleAuth.status().object();
     status.insert(QStringLiteral("sync"), m_googleSync.status().object());
+    status.insert(QStringLiteral("mutations"), m_googleMutations.status().object());
     return QString::fromUtf8(QJsonDocument(status).toJson(QJsonDocument::Compact));
 }
 
@@ -114,6 +132,7 @@ bool CalendarService::DisconnectGoogle()
     if (!m_googleAuth.disconnectAccount())
         return false;
     m_googleSync.cancel();
+    m_googleMutations.cancel();
     if (!m_database.importCompatibilityFeed(m_feedPath))
         qWarning().noquote() << m_database.lastError();
     emit EventsChanged();
@@ -145,6 +164,8 @@ QString CalendarService::CreateEvent(const QString &eventJson)
         qWarning().noquote() << m_database.lastError();
     ensureWatching();
     emit EventsChanged();
+    if (m_googleAuth.writeAccessAvailable())
+        m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
     return eventId;
 }
 

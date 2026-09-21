@@ -143,6 +143,22 @@ int main(int argc, char **argv)
                      database.lastError().toUtf8().constData());
         return 26;
     }
+    const QJsonObject queued = database.nextPendingMutation(accountId).object();
+    if (queued.value(QStringLiteral("providerEventId")).toString() != localEventId
+        || queued.value(QStringLiteral("operation")).toString() != QStringLiteral("create")
+        || queued.value(QStringLiteral("payload")).toObject().value(QStringLiteral("title")).toString()
+            != QStringLiteral("Queued planning event"))
+        return 27;
+    if (!database.completeCreateMutation(queued.value(QStringLiteral("id")).toString(), QJsonObject {
+            { QStringLiteral("id"), QStringLiteral("google-created-event") },
+            { QStringLiteral("iCalUID"), QStringLiteral("created@example.com") },
+            { QStringLiteral("htmlLink"), QStringLiteral("https://calendar.google.com/event?eid=created") },
+            { QStringLiteral("etag"), QStringLiteral("created-etag") },
+            { QStringLiteral("updated"), QStringLiteral("2026-09-20T23:00:00Z") }
+        })
+        || !database.nextPendingMutation(accountId).object().isEmpty()
+        || database.status().object().value(QStringLiteral("pendingMutationCount")).toInt() != 0)
+        return 28;
     if (!database.removeAccount(accountId))
         return 14;
     if (!database.accounts().array().isEmpty()

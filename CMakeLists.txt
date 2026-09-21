@@ -57,6 +57,8 @@ qt_add_executable(omarchy-calendar-service
     service/database.h
     service/googleauth.cpp
     service/googleauth.h
+    service/googlemutations.cpp
+    service/googlemutations.h
     service/googlesync.cpp
     service/googlesync.h
     service/main.cpp

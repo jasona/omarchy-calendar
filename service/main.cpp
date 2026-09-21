@@ -2,6 +2,7 @@
 #include "database.h"
 #include "googleauth.h"
 #include "googlesync.h"
+#include "googlemutations.h"
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -47,7 +48,8 @@ int main(int argc, char *argv[])
 
     GoogleAuth googleAuth(database);
     GoogleSync googleSync(database);
-    CalendarService service(database, googleAuth, googleSync, feedPath);
+    GoogleMutations googleMutations(database);
+    CalendarService service(database, googleAuth, googleSync, googleMutations, feedPath);
     auto bus = QDBusConnection::sessionBus();
     if (!bus.registerService(QStringLiteral("org.omarchy.Calendar"))) {
         qCritical().noquote() << "Could not register org.omarchy.Calendar:" << bus.lastError().message();

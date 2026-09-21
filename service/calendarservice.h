@@ -6,6 +6,7 @@
 class Database;
 class GoogleAuth;
 class GoogleSync;
+class GoogleMutations;
 
 class CalendarService final : public QObject
 {
@@ -14,6 +15,7 @@ class CalendarService final : public QObject
 
 public:
     CalendarService(Database &database, GoogleAuth &googleAuth, GoogleSync &googleSync,
+                    GoogleMutations &googleMutations,
                     QString feedPath, QObject *parent = nullptr);
 
 public slots:
@@ -46,6 +48,7 @@ private:
     Database &m_database;
     GoogleAuth &m_googleAuth;
     GoogleSync &m_googleSync;
+    GoogleMutations &m_googleMutations;
     QString m_feedPath;
     QFileSystemWatcher m_watcher;
 };

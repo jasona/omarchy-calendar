@@ -41,6 +41,10 @@ stored immediately in SQLite and placed in the durable mutation queue so they
 survive restarts while Google write authorization and upload are completed.
 Existing read-only connections can choose **Enable editing** in Settings to
 grant the event-management scope without disconnecting or clearing cached data.
+Once editing is enabled, queued creations upload automatically. Successful
+responses replace the temporary local identity atomically, and transient
+failures remain queued with bounded retry rather than losing the event. Stable
+client-assigned Google IDs make retries idempotent across process restarts.
 
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development
@@ -80,4 +84,5 @@ cd ..
 ./tests/test-dbus-contract.sh build-service/omarchy-calendar-service
 ./tests/test-google-auth-contract.sh build-service/omarchy-calendar-service
 ./tests/test-google-sync-retry.sh
+./tests/test-google-mutation-upload.sh
 ```

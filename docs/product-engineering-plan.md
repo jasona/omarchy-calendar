@@ -25,6 +25,7 @@ As of September 20, 2026, the first Phase 0 prototype is running:
 - Deterministic Google failure drills covering transient server errors, rate limiting, expired sync tokens, revoked authorization, bounded retry state, cursor safety, and cached calendar retention.
 - Phase 2 foundation: schema version 3, durable pending mutations, atomic optimistic event creation, and a native keyboard-accessible event composer.
 - Scope-aware editing upgrade: schema version 4 records granted capabilities and Settings offers an explicit Google consent upgrade before queued mutations can upload.
+- Google create uploader with exact event payload conversion, durable retry/blocked states, atomic local-to-provider identity reconciliation, compatibility-feed refresh, and deterministic localhost API coverage.
 - CMake project plus a qmake bootstrap for the current development machine.
 - Real Wayland visual review with a scoped opaque-window rule for calendar legibility.
 

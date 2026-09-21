@@ -598,6 +598,19 @@ QString Database::accountGrantedScopes(const QString &id) const
     return query.exec() && query.next() ? query.value(0).toString() : QString();
 }
 
+bool Database::requeueBlockedMutations(const QString &accountId)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "UPDATE pending_mutations SET state='queued',last_error='',updated_at=? "
+        "WHERE account_id=? AND state='blocked'"));
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(accountId);
+    if (query.exec()) return true;
+    setError(QStringLiteral("Blocked mutations could not be requeued"), query.lastError().text());
+    return false;
+}
+
 bool Database::removeAccount(const QString &id)
 {
     QSqlQuery query(m_database);
@@ -653,6 +666,8 @@ QString Database::createPendingEvent(const QJsonObject &event)
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
     QJsonObject payload = event;
     payload.insert("id", eventId);
+    payload.insert("googleEventId", QString::fromLatin1(
+        QCryptographicHash::hash(eventId.toUtf8(), QCryptographicHash::Sha256).toHex().left(32)));
     payload.insert("timeZone", QString::fromUtf8(zone.id()));
     const QString json = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
     if (!m_database.transaction()) return {};
@@ -677,6 +692,95 @@ QString Database::createPendingEvent(const QJsonObject &event)
     }
     m_lastError.clear();
     return eventId;
+}
+
+QJsonDocument Database::nextPendingMutation(const QString &accountId) const
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT m.id,m.calendar_id,c.provider_calendar_id,m.provider_event_id,m.operation,"
+        "m.payload_json,m.attempt_count,m.state FROM pending_mutations m "
+        "JOIN calendars c ON c.id=m.calendar_id "
+        "WHERE m.account_id=? AND m.state IN ('queued','retrying','uploading') "
+        "ORDER BY m.created_at LIMIT 1"));
+    query.addBindValue(accountId);
+    if (!query.exec() || !query.next())
+        return QJsonDocument(QJsonObject {});
+    const QJsonDocument payload = QJsonDocument::fromJson(query.value(5).toByteArray());
+    return QJsonDocument(QJsonObject {
+        { QStringLiteral("id"), query.value(0).toString() },
+        { QStringLiteral("calendarId"), query.value(1).toString() },
+        { QStringLiteral("providerCalendarId"), query.value(2).toString() },
+        { QStringLiteral("providerEventId"), query.value(3).toString() },
+        { QStringLiteral("operation"), query.value(4).toString() },
+        { QStringLiteral("payload"), payload.object() },
+        { QStringLiteral("attemptCount"), query.value(6).toInt() },
+        { QStringLiteral("state"), query.value(7).toString() }
+    });
+}
+
+bool Database::setMutationState(const QString &mutationId, const QString &state,
+                                const QString &error, bool incrementAttempt)
+{
+    QSqlQuery query(m_database);
+    query.prepare(incrementAttempt
+        ? QStringLiteral("UPDATE pending_mutations SET state=?,last_error=?,attempt_count=attempt_count+1,updated_at=? WHERE id=?")
+        : QStringLiteral("UPDATE pending_mutations SET state=?,last_error=?,updated_at=? WHERE id=?"));
+    query.addBindValue(state);
+    query.addBindValue(error);
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(mutationId);
+    if (query.exec() && query.numRowsAffected() == 1)
+        return true;
+    setError(QStringLiteral("Mutation state could not be updated"), query.lastError().text());
+    return false;
+}
+
+bool Database::completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent)
+{
+    const QString remoteId = remoteEvent.value(QStringLiteral("id")).toString();
+    if (remoteId.isEmpty()) {
+        setError(QStringLiteral("Google create response was incomplete"), QStringLiteral("missing event id"));
+        return false;
+    }
+    if (!m_database.transaction()) {
+        setError(QStringLiteral("Mutation completion transaction could not start"), m_database.lastError().text());
+        return false;
+    }
+    QSqlQuery mutation(m_database);
+    mutation.prepare(QStringLiteral("SELECT calendar_id,provider_event_id FROM pending_mutations WHERE id=? AND operation='create'"));
+    mutation.addBindValue(mutationId);
+    if (!mutation.exec() || !mutation.next()) {
+        setError(QStringLiteral("Queued create could not be found"), mutation.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    const QString calendarId = mutation.value(0).toString();
+    const QString localId = mutation.value(1).toString();
+    QSqlQuery update(m_database);
+    update.prepare(QStringLiteral(
+        "UPDATE events SET provider_event_id=?,provider_uid=?,event_url=?,etag=?,"
+        "provider_updated_at=?,raw_json=?,source='google' "
+        "WHERE calendar_id=? AND provider_event_id=? AND source='local-pending'"));
+    update.addBindValue(remoteId);
+    update.addBindValue(remoteEvent.value(QStringLiteral("iCalUID")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("htmlLink")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("etag")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("updated")).toString(QStringLiteral("")));
+    update.addBindValue(QString::fromUtf8(QJsonDocument(remoteEvent).toJson(QJsonDocument::Compact)));
+    update.addBindValue(calendarId);
+    update.addBindValue(localId);
+    QSqlQuery remove(m_database);
+    remove.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
+    remove.addBindValue(mutationId);
+    if (!update.exec() || update.numRowsAffected() < 1 || !remove.exec() || !m_database.commit()) {
+        setError(QStringLiteral("Google event could not replace its local draft"),
+                 update.lastError().text() + remove.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
 }
 
 bool Database::setSyncCursor(const QString &accountId, const QString &calendarId,
@@ -981,7 +1085,7 @@ QJsonDocument Database::status() const
         "WHERE c.selected=1 AND (c.source!='compat-json' OR NOT EXISTS ("
         "SELECT 1 FROM accounts WHERE provider='google' AND last_sync_at!=''))), "
         "(SELECT COUNT(*) FROM accounts), "
-        "(SELECT COUNT(*) FROM pending_mutations WHERE state='queued'), "
+        "(SELECT COUNT(*) FROM pending_mutations), "
         "(SELECT MAX(value) FROM metadata WHERE key='compat_feed_synced_at')"), m_database);
     QJsonObject result {
         { QStringLiteral("schemaVersion"), 4 },

@@ -8,6 +8,7 @@ Item {
     property var calendars: []
     property var providerStatus: ({})
     property var syncStatus: providerStatus.sync || ({})
+    property var mutationStatus: providerStatus.mutations || ({})
     property var googleAccount: accounts.filter(function(account) { return account.provider === "google" })[0] || ({})
     property var googleCalendars: calendars.filter(function(calendar) { return calendar.source === "google" })
     property bool googleConnected: !!googleAccount.id
@@ -17,6 +18,10 @@ Item {
     signal setCalendarSync(string calendarId, bool enabled)
 
     function syncSummary() {
+        if (mutationStatus.state === "uploading")
+            return "Uploading " + mutationStatus.pendingCount + " queued change" + (mutationStatus.pendingCount === 1 ? "" : "s")
+        if (mutationStatus.state === "retrying")
+            return "A queued change will retry automatically"
         if (syncStatus.state === "syncing") {
             var progress = syncStatus.calendarsTotal > 0
                     ? " · " + syncStatus.calendarsCompleted + " of " + syncStatus.calendarsTotal + " calendars"
@@ -243,9 +248,10 @@ Item {
 
             Text {
                 visible: (syncStatus.lastError && syncStatus.lastError.length > 0)
+                         || (mutationStatus.lastError && mutationStatus.lastError.length > 0)
                          || (providerStatus.lastError && providerStatus.lastError.length > 0)
                 width: parent.width
-                text: syncStatus.lastError || providerStatus.lastError || ""
+                text: mutationStatus.lastError || syncStatus.lastError || providerStatus.lastError || ""
                 color: theme.red
                 font.pixelSize: theme.baseFontSize
                 wrapMode: Text.WordWrap
