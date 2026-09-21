@@ -1,6 +1,6 @@
 # DBus API
 
-The initial read-only service owns `org.omarchy.Calendar` on the user bus and
+The local calendar service owns `org.omarchy.Calendar` on the user bus and
 exports `/org/omarchy/Calendar` with interface `org.omarchy.Calendar1`.
 
 All payload methods return compact JSON. This keeps the first contract easy to

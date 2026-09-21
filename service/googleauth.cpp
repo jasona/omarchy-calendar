@@ -45,7 +45,7 @@ void GoogleAuth::configure()
         QByteArrayLiteral("email"),
         QByteArrayLiteral("profile"),
         QByteArrayLiteral("https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
-        QByteArrayLiteral("https://www.googleapis.com/auth/calendar.events.readonly")
+        QByteArrayLiteral("https://www.googleapis.com/auth/calendar.events")
     });
     m_oauth->setModifyParametersFunction([](QAbstractOAuth::Stage stage,
                                              QMultiMap<QString, QVariant> *parameters) {
@@ -117,6 +117,7 @@ bool GoogleAuth::disconnectAccount()
     m_oauth->setToken({});
     m_oauth->setRefreshToken({});
     m_currentAccountId.clear();
+    m_writeAccess = false;
     m_state = QStringLiteral("disconnected");
     m_lastError.clear();
     m_redirectUrl.clear();
@@ -158,9 +159,16 @@ void GoogleAuth::finishAuthorization()
         setError(m_database.lastError());
         return;
     }
+    const QString grantedScopes = QStringLiteral(
+        "openid email profile calendar.calendarlist.readonly calendar.events");
+    if (!m_database.setAccountGrantedScopes(accountId, grantedScopes)) {
+        setError(m_database.lastError());
+        return;
+    }
 
     m_state = QStringLiteral("connected");
     m_currentAccountId = accountId;
+    m_writeAccess = true;
     m_lastError.clear();
     m_redirectUrl.clear();
     m_replyHandler->close();
@@ -177,6 +185,8 @@ void GoogleAuth::restoreAccount()
         if (account.value(QStringLiteral("provider")).toString() != QStringLiteral("google"))
             continue;
         m_currentAccountId = account.value(QStringLiteral("id")).toString();
+        m_writeAccess = m_database.accountGrantedScopes(m_currentAccountId)
+                            .contains(QStringLiteral("calendar.events"));
         break;
     }
     if (m_currentAccountId.isEmpty())
@@ -242,6 +252,7 @@ QJsonDocument GoogleAuth::status() const
         { QStringLiteral("authorizationUrl"), m_redirectUrl },
         { QStringLiteral("lastError"), m_lastError },
         { QStringLiteral("tokenStorage"), QStringLiteral("secret-service") },
-        { QStringLiteral("scope"), QStringLiteral("calendar.calendarlist.readonly calendar.events.readonly") }
+        { QStringLiteral("scope"), QStringLiteral("calendar.calendarlist.readonly calendar.events") },
+        { QStringLiteral("writeAccessAvailable"), m_writeAccess }
     });
 }

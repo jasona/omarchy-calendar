@@ -94,8 +94,11 @@ Item {
                             text: root.googleConnected
                                   ? (root.googleAccount.email || root.googleAccount.displayName)
                                     + "\n" + root.syncSummary()
+                                    + (!root.providerStatus.writeAccessAvailable
+                                       ? "\nEnable editing once to send locally queued changes to Google."
+                                       : "")
                                   : root.providerStatus.configured
-                                    ? "Connect securely in your browser. Omarchy Calendar requests read-only access for the first synchronization milestone."
+                                    ? "Connect securely in your browser. Calendar-list access stays read-only; event access enables synchronization and editing."
                                     : "Google connection is ready for an OAuth client. Add the application credentials to the user service to enable account sign-in."
                             color: theme.foregroundMuted
                             font.pixelSize: theme.baseFontSize
@@ -129,7 +132,7 @@ Item {
                             Rectangle {
                                 width: scopeLabel.implicitWidth + 18; height: 27; radius: 7
                                 color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.12)
-                                Text { id: scopeLabel; anchors.centerIn: parent; text: "Read-only scope"; color: theme.accent; font.pixelSize: theme.baseFontSize - 2; font.weight: Font.DemiBold }
+                                Text { id: scopeLabel; anchors.centerIn: parent; text: root.providerStatus.writeAccessAvailable ? "Editing enabled" : "Read-only access"; color: theme.accent; font.pixelSize: theme.baseFontSize - 2; font.weight: Font.DemiBold }
                             }
                         }
 
@@ -146,6 +149,13 @@ Item {
                                          ? root.syncStatus.state !== "syncing"
                                          : !!root.providerStatus.configured && root.providerStatus.state !== "authorizing"
                                 onClicked: root.googleConnected ? root.syncGoogle() : root.connectGoogle()
+                            }
+                            CalendarButton {
+                                visible: root.googleConnected && !root.providerStatus.writeAccessAvailable
+                                text: root.providerStatus.state === "authorizing" ? "Waiting for Google…" : "Enable editing"
+                                selected: true
+                                enabled: root.providerStatus.state !== "authorizing"
+                                onClicked: root.connectGoogle()
                             }
                             CalendarButton {
                                 visible: root.googleConnected

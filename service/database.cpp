@@ -230,6 +230,27 @@ bool Database::migrate()
         }
     }
 
+    QSqlQuery versionFour(m_database);
+    if (!versionFour.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=4"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionFour.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionFour.next()) {
+        const QStringList versionFourStatements {
+            QStringLiteral("ALTER TABLE accounts ADD COLUMN granted_scopes TEXT NOT NULL DEFAULT ''"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionFourStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
     if (!m_database.commit()) {
         setError(QStringLiteral("Migration transaction could not commit"), m_database.lastError().text());
         return false;
@@ -554,6 +575,27 @@ bool Database::updateAccountSyncState(const QString &id, const QString &syncStat
         return true;
     setError(QStringLiteral("Account state could not be updated"), query.lastError().text());
     return false;
+}
+
+bool Database::setAccountGrantedScopes(const QString &id, const QString &scopes)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("UPDATE accounts SET granted_scopes=?, updated_at=? WHERE id=?"));
+    query.addBindValue(scopes);
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(id);
+    if (query.exec() && query.numRowsAffected() == 1)
+        return true;
+    setError(QStringLiteral("Google scopes could not be stored"), query.lastError().text());
+    return false;
+}
+
+QString Database::accountGrantedScopes(const QString &id) const
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("SELECT granted_scopes FROM accounts WHERE id=?"));
+    query.addBindValue(id);
+    return query.exec() && query.next() ? query.value(0).toString() : QString();
 }
 
 bool Database::removeAccount(const QString &id)
@@ -942,7 +984,7 @@ QJsonDocument Database::status() const
         "(SELECT COUNT(*) FROM pending_mutations WHERE state='queued'), "
         "(SELECT MAX(value) FROM metadata WHERE key='compat_feed_synced_at')"), m_database);
     QJsonObject result {
-        { QStringLiteral("schemaVersion"), 3 },
+        { QStringLiteral("schemaVersion"), 4 },
         { QStringLiteral("databasePath"), m_path },
         { QStringLiteral("lastError"), m_lastError }
     };

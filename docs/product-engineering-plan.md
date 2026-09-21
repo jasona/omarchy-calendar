@@ -16,14 +16,15 @@ As of September 20, 2026, the first Phase 0 prototype is running:
 - Collision-aware side-by-side layout for overlapping timed events.
 - Keyboard focus cursors for day, week, month, agenda, and search, including arrow keys, `J`/`K`, Enter activation, and automatic scrolling to selected events.
 - Schema version 2 with provider accounts, multi-account event identity, synchronization cursors, expanded provider metadata, and lossless migration from the compatibility database.
-- Google desktop OAuth foundation using PKCE, a loopback callback, DBus authorization signals, read-only calendar scope, and refresh-token storage in Secret Service.
+- Google desktop OAuth foundation using PKCE, a loopback callback, DBus authorization signals, staged calendar permissions, and refresh-token storage in Secret Service.
 - An account Settings surface that reflects configuration, authorization, connected, and error states.
 - Google Calendar List and Events synchronization with pagination, selected-calendar filtering, transactional full and incremental imports, cancellation handling, multi-day expansion, expired-token recovery, manual refresh, and a five-minute background interval.
 - Live synchronization progress and diagnostics, bounded retry backoff, immediate retry after network restoration, automatic access-token rotation, and guarded account removal with Secret Service cleanup.
-- Narrow Calendar List and Events read-only OAuth scopes, plus atomic compatibility-feed export after successful Google synchronization for the existing Omarchy top-bar integration.
+- Narrow read-only Calendar List plus event-management OAuth scopes, with a persisted editing capability and atomic compatibility-feed export for the Omarchy top bar.
 - Persistent per-calendar sync selection with a polished Settings control, immediate app and top-bar updates, cached paused calendars, and automatic incremental sync when resumed.
 - Deterministic Google failure drills covering transient server errors, rate limiting, expired sync tokens, revoked authorization, bounded retry state, cursor safety, and cached calendar retention.
 - Phase 2 foundation: schema version 3, durable pending mutations, atomic optimistic event creation, and a native keyboard-accessible event composer.
+- Scope-aware editing upgrade: schema version 4 records granted capabilities and Settings offers an explicit Google consent upgrade before queued mutations can upload.
 - CMake project plus a qmake bootstrap for the current development machine.
 - Real Wayland visual review with a scoped opaque-window rule for calendar legibility.
 

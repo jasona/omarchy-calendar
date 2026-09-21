@@ -42,7 +42,8 @@ dbus-run-session -- bash -c '
   [[ "$after" == *"accounts.google.com/o/oauth2/v2/auth"* ]]
   [[ "$after" == *"127.0.0.1"* ]]
   [[ "$after" == *"calendar.calendarlist.readonly"* ]]
-  [[ "$after" == *"calendar.events.readonly"* ]]
+  [[ "$after" == *"calendar.events"* ]]
+  [[ "$before" == *"\"writeAccessAvailable\":false"* ]]
 '
 
 echo "google auth contract: ok"

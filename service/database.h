@@ -27,6 +27,8 @@ public:
                        const QString &email, const QString &syncState);
     bool updateAccountSyncState(const QString &id, const QString &syncState,
                                 const QString &lastError = {});
+    bool setAccountGrantedScopes(const QString &id, const QString &scopes);
+    QString accountGrantedScopes(const QString &id) const;
     bool setCalendarSelected(const QString &calendarId, bool selected);
     QString createPendingEvent(const QJsonObject &event);
     bool removeAccount(const QString &id);

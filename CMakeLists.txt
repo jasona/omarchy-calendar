@@ -30,6 +30,9 @@ qt_add_resources(omarchy-calendar qml
         app/qml/App.qml
         app/qml/components/CalendarButton.qml
         app/qml/components/EventCard.qml
+        app/qml/components/ThemedTextField.qml
+        app/qml/components/ThemedTextArea.qml
+        app/qml/components/ThemedComboBox.qml
         app/qml/views/WeekView.qml
         app/qml/views/DayView.qml
         app/qml/views/MonthView.qml

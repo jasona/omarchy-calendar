@@ -23,6 +23,7 @@ public:
     QJsonDocument status() const;
     QString accessToken() const;
     QString currentAccountId() const { return m_currentAccountId; }
+    bool writeAccessAvailable() const { return m_writeAccess; }
 
 signals:
     void authorizationRequired(const QString &url);
@@ -50,4 +51,5 @@ private:
     QString m_lastError;
     QString m_redirectUrl;
     QString m_currentAccountId;
+    bool m_writeAccess = false;
 };
