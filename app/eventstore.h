@@ -32,6 +32,7 @@ public:
     Q_INVOKABLE QString createEvent(const QVariantMap &event) const;
     Q_INVOKABLE bool updateEvent(const QVariantMap &event) const;
     Q_INVOKABLE QString deleteEvent(const QString &calendarId, const QString &eventId) const;
+    Q_INVOKABLE QString deleteEventScoped(const QVariantMap &event) const;
     Q_INVOKABLE bool undoDelete(const QString &mutationId) const;
     Q_INVOKABLE bool syncNow() const;
     Q_INVOKABLE QVariantMap nextEvent() const;

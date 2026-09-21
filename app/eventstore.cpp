@@ -344,6 +344,15 @@ QString EventStore::deleteEvent(const QString &calendarId, const QString &eventI
     return reply.isValid() ? reply.value() : QString();
 }
 
+QString EventStore::deleteEventScoped(const QVariantMap &event) const
+{
+    if (!serviceBacked()) return {};
+    const QString json = QString::fromUtf8(
+        QJsonDocument(QJsonObject::fromVariantMap(event)).toJson(QJsonDocument::Compact));
+    const QDBusReply<QString> reply = m_service->call(QStringLiteral("DeleteEventScoped"), json);
+    return reply.isValid() ? reply.value() : QString();
+}
+
 bool EventStore::undoDelete(const QString &mutationId) const
 {
     if (!serviceBacked()) return false;

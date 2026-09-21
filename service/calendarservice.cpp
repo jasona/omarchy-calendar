@@ -193,7 +193,18 @@ bool CalendarService::UpdateEvent(const QString &eventJson)
 
 QString CalendarService::DeleteEvent(const QString &calendarId, const QString &eventId)
 {
-    const QString mutationId = m_database.deletePendingEvent(calendarId, eventId);
+    return DeleteEventScoped(QString::fromUtf8(QJsonDocument(QJsonObject {
+        { QStringLiteral("calendarId"), calendarId },
+        { QStringLiteral("id"), eventId },
+        { QStringLiteral("scope"), QStringLiteral("occurrence") }
+    }).toJson(QJsonDocument::Compact)));
+}
+
+QString CalendarService::DeleteEventScoped(const QString &eventJson)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(eventJson.toUtf8());
+    if (!document.isObject()) return {};
+    const QString mutationId = m_database.deletePendingEvent(document.object());
     if (mutationId.isEmpty()) return {};
     if (!m_database.exportCompatibilityFeed(m_feedPath))
         qWarning().noquote() << m_database.lastError();

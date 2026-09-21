@@ -226,8 +226,24 @@ ApplicationWindow {
 
     function deleteSelectedEvent() {
         if (!eventDeletable(selectedEvent)) return
-        let title = selectedEvent.title || "Event"
-        let token = eventStore.deleteEvent(selectedEvent.calendarId, selectedEvent.id)
+        if (selectedEvent.isRecurring) {
+            deleteScopePopup.deleteCandidate = Object.assign({}, selectedEvent)
+            deleteScopePopup.open()
+            return
+        }
+        performDelete(selectedEvent, "occurrence")
+    }
+
+    function performDelete(eventData, scope) {
+        let title = eventData.title || "Event"
+        let token = eventStore.deleteEventScoped({
+            calendarId: eventData.calendarId,
+            id: eventData.id,
+            scope: scope,
+            seriesId: eventData.seriesId || eventData.id,
+            originalStartMs: eventData.originalStartMs || eventData.startMs,
+            originalStartDate: eventData.originalStartDate || eventData.allDayStartDate || ""
+        })
         if (!token) return
         pendingDeleteTitle = title
         pendingDeleteToken = token
@@ -568,6 +584,15 @@ ApplicationWindow {
                             Text { text: window.selectedEvent.calendarName || ""; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
                             Text { text: window.selectedEvent.allDay ? "All-day event" : "Scheduled event"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
                             Text { visible: !window.selectedEvent.allDay && !!window.selectedEvent.timeZone; text: window.selectedEvent.timeZone || ""; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+                            Text {
+                                visible: !!window.selectedEvent.isRecurring
+                                text: window.selectedEvent.isSeriesMaster ? "Recurring series"
+                                      : window.selectedEvent.isException
+                                        ? "Recurring series · changed occurrence"
+                                        : "Recurring occurrence"
+                                color: theme.accent
+                                font.pixelSize: theme.baseFontSize
+                            }
                         }
 
                         Text {
@@ -666,6 +691,73 @@ ApplicationWindow {
 
 
     Popup {
+        id: deleteScopePopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 430
+        modal: true
+        focus: true
+        padding: 24
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property var deleteCandidate: ({})
+
+        function choose(scope) {
+            let candidate = deleteCandidate
+            close()
+            window.performDelete(candidate, scope)
+        }
+
+        background: Rectangle {
+            radius: 18
+            color: theme.backgroundDeep
+            border.width: 1
+            border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text {
+                text: "Delete recurring event"
+                color: theme.foreground
+                font.pixelSize: theme.baseFontSize + 8
+                font.weight: Font.DemiBold
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "Choose how much of this series to remove. You can undo for six seconds."
+                color: theme.foregroundMuted
+                font.pixelSize: theme.baseFontSize
+                wrapMode: Text.WordWrap
+            }
+            CalendarButton {
+                visible: !deleteScopePopup.deleteCandidate.isSeriesMaster
+                Layout.fillWidth: true
+                text: "This occurrence"
+                onClicked: deleteScopePopup.choose("occurrence")
+            }
+            CalendarButton {
+                visible: !deleteScopePopup.deleteCandidate.isSeriesMaster
+                Layout.fillWidth: true
+                text: "This and following"
+                onClicked: deleteScopePopup.choose("future")
+            }
+            CalendarButton {
+                Layout.fillWidth: true
+                text: "Entire series"
+                selected: true
+                accentColor: theme.red
+                onClicked: deleteScopePopup.choose("series")
+            }
+            CalendarButton {
+                Layout.fillWidth: true
+                text: "Cancel"
+                onClicked: deleteScopePopup.close()
+            }
+        }
+    }
+
+
+    Popup {
         id: eventEditor
         parent: Overlay.overlay
         anchors.centerIn: parent
@@ -681,6 +773,27 @@ ApplicationWindow {
             return calendar.accessRole === "owner" || calendar.accessRole === "writer"
         })
         property var timezoneOptions: timeZones.options(Date.now(), preferences.recentTimeZones)
+        property var repeatOptions: [
+            { label: "Does not repeat" },
+            { label: "Daily" },
+            { label: "Every weekday" },
+            { label: "Weekly" },
+            { label: "Monthly" },
+            { label: "Yearly" },
+            { label: "Custom…" }
+        ]
+        property var customUnitOptions: [
+            { label: "days", frequency: "DAILY" },
+            { label: "weeks", frequency: "WEEKLY" },
+            { label: "months", frequency: "MONTHLY" },
+            { label: "years", frequency: "YEARLY" }
+        ]
+        property var repeatEndOptions: [ { label: "Never" }, { label: "After" } ]
+        property var editScopeOptions: [
+            { label: "This occurrence" },
+            { label: "This and following" },
+            { label: "Entire series" }
+        ]
         property bool preferLaterStart: false
         property bool preferLaterEnd: false
         property var startResolution: allDayToggle.checked ? ({ valid: true })
@@ -719,6 +832,35 @@ ApplicationWindow {
             return Qt.formatDate(date, "yyyy-MM-dd") === value
         }
 
+        function recurrenceRule() {
+            let rule = ""
+            if (repeatField.currentIndex === 1)
+                rule = "RRULE:FREQ=DAILY"
+            else if (repeatField.currentIndex === 2)
+                rule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+            else if (repeatField.currentIndex === 3) {
+                let tokens = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+                let date = new Date(dateField.text + "T12:00:00")
+                rule = "RRULE:FREQ=WEEKLY;BYDAY=" + tokens[date.getDay()]
+            } else if (repeatField.currentIndex === 4)
+                rule = "RRULE:FREQ=MONTHLY"
+            else if (repeatField.currentIndex === 5)
+                rule = "RRULE:FREQ=YEARLY"
+            else if (repeatField.currentIndex === 6) {
+                let unit = customUnitOptions[customUnitField.currentIndex]
+                let interval = Number(customIntervalField.text)
+                rule = "RRULE:FREQ=" + unit.frequency + ";INTERVAL=" + interval
+                if (unit.frequency === "WEEKLY") {
+                    let tokens = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+                    let date = new Date(dateField.text + "T12:00:00")
+                    rule += ";BYDAY=" + tokens[date.getDay()]
+                }
+            }
+            if (rule.length > 0 && repeatEndField.currentIndex === 1)
+                rule += ";COUNT=" + Number(repeatCountField.text)
+            return rule
+        }
+
         function openForDate(date) {
             editingEvent = ({})
             let start = new Date(date)
@@ -728,6 +870,11 @@ ApplicationWindow {
             locationField.text = ""
             descriptionField.text = ""
             allDayToggle.checked = false
+            repeatField.currentIndex = 0
+            customIntervalField.text = "2"
+            customUnitField.currentIndex = 1
+            repeatEndField.currentIndex = 0
+            repeatCountField.text = "10"
             dateField.text = Qt.formatDate(start, "yyyy-MM-dd")
             endDateField.text = Qt.formatDate(start, "yyyy-MM-dd")
             startField.text = Qt.formatTime(start, "HH:mm")
@@ -750,6 +897,9 @@ ApplicationWindow {
             let start = timeZones.wallTime(eventData.startMs, zone)
             let end = timeZones.wallTime(eventData.endMs, zone)
             allDayToggle.checked = !!eventData.allDay
+            repeatField.currentIndex = 0
+            repeatEndField.currentIndex = 0
+            editScopeField.currentIndex = 0
             dateField.text = eventData.allDay ? eventData.allDayStartDate : start.date
             let inclusiveEnd = new Date(eventData.allDayEndDate + "T12:00:00")
             if (eventData.allDay) inclusiveEnd.setDate(inclusiveEnd.getDate() - 1)
@@ -799,13 +949,53 @@ ApplicationWindow {
                 errorText.text = "The end time must be after the start time."
                 return
             }
+            if (!editing && repeatField.currentIndex === 6
+                    && (!/^\d+$/.test(customIntervalField.text)
+                        || Number(customIntervalField.text) < 1
+                        || Number(customIntervalField.text) > 99)) {
+                errorText.text = "Custom intervals must be between 1 and 99."
+                return
+            }
+            if (!editing && repeatField.currentIndex > 0 && repeatEndField.currentIndex === 1
+                    && (!/^\d+$/.test(repeatCountField.text)
+                        || Number(repeatCountField.text) < 1
+                        || Number(repeatCountField.text) > 999)) {
+                errorText.text = "Occurrences must be between 1 and 999."
+                return
+            }
             let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: startMs, endMs: endMs, allDay: allDayToggle.checked, timeZone: zone }
             if (allDayToggle.checked) {
                 payload.allDayStartDate = dateField.text
                 payload.allDayEndDate = allDayEndDate
             }
-            if (editing)
+            let rule = recurrenceRule()
+            if (!editing && rule.length > 0)
+                payload.recurrence = [rule]
+            if (editing) {
                 payload.id = editingEvent.id
+                if (editingEvent.isRecurring) {
+                    let futureScope = !editingEvent.isSeriesMaster && editScopeField.currentIndex === 1
+                    let seriesScope = editingEvent.isSeriesMaster || editScopeField.currentIndex === 2
+                    payload.scope = futureScope ? "future" : seriesScope ? "series" : "occurrence"
+                    if (seriesScope) {
+                        payload.seriesId = editingEvent.seriesId || editingEvent.id
+                        payload.scopeBaseStartMs = editingEvent.startMs
+                        payload.scopeBaseEndMs = editingEvent.endMs
+                        payload.scopeBaseAllDayStartDate = editingEvent.allDayStartDate || ""
+                        payload.scopeBaseAllDayEndDate = editingEvent.allDayEndDate || ""
+                    }
+                    if (futureScope) {
+                        payload.seriesId = editingEvent.seriesId
+                        payload.scopeBaseStartMs = editingEvent.startMs
+                        payload.scopeBaseEndMs = editingEvent.endMs
+                        payload.scopeBaseAllDayStartDate = editingEvent.allDayStartDate || ""
+                        payload.scopeBaseAllDayEndDate = editingEvent.allDayEndDate || ""
+                        payload.scopeOriginalStartMs = editingEvent.originalStartMs || editingEvent.startMs
+                        payload.scopeOriginalStartDate = editingEvent.originalStartDate
+                                                    || editingEvent.allDayStartDate || ""
+                    }
+                }
+            }
             let saved = editing ? eventStore.updateEvent(payload) : !!eventStore.createEvent(payload)
             if (!saved) {
                 errorText.text = endMs <= startMs ? "The end time must be after the start time." : "The event could not be saved."
@@ -831,7 +1021,29 @@ ApplicationWindow {
             anchors { fill: parent; margins: 26 }
             spacing: 14
             Text { text: eventEditor.editing ? "Edit event" : "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
-            Text { text: eventEditor.editing ? "Changes are saved locally first, then synchronized with Google." : "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Text {
+                text: eventEditor.editing && eventEditor.editingEvent.isRecurring
+                      ? eventEditor.editingEvent.isSeriesMaster || editScopeField.currentIndex === 2
+                        ? "Changes apply to the entire series and synchronize with Google."
+                        : editScopeField.currentIndex === 1
+                          ? "A new series begins here; earlier occurrences stay unchanged."
+                        : "Changes apply to this occurrence and synchronize with Google."
+                      : eventEditor.editing
+                        ? "Changes are saved locally first, then synchronized with Google."
+                        : "Saved instantly on this device and queued for Google."
+                color: theme.foregroundMuted
+                font.pixelSize: theme.baseFontSize
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            ThemedComboBox {
+                id: editScopeField
+                visible: eventEditor.editing && eventEditor.editingEvent.isRecurring
+                         && !eventEditor.editingEvent.isSeriesMaster
+                Layout.fillWidth: true
+                model: eventEditor.editScopeOptions
+                textRole: "label"
+            }
             ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
             ThemedComboBox {
                 id: calendarField
@@ -847,6 +1059,56 @@ ApplicationWindow {
                 text: checked ? "✓  All-day event" : "All-day event"
                 selected: checked
                 Layout.alignment: Qt.AlignLeft
+            }
+            ThemedComboBox {
+                id: repeatField
+                visible: !eventEditor.editing
+                Layout.fillWidth: true
+                model: eventEditor.repeatOptions
+                textRole: "label"
+            }
+            RowLayout {
+                visible: !eventEditor.editing && repeatField.currentIndex === 6
+                Layout.fillWidth: true
+                Text { text: "Every"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+                ThemedTextField {
+                    id: customIntervalField
+                    Layout.preferredWidth: 72
+                    text: "2"
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    horizontalAlignment: TextInput.AlignHCenter
+                }
+                ThemedComboBox {
+                    id: customUnitField
+                    Layout.fillWidth: true
+                    model: eventEditor.customUnitOptions
+                    textRole: "label"
+                }
+            }
+            RowLayout {
+                visible: !eventEditor.editing && repeatField.currentIndex > 0
+                Layout.fillWidth: true
+                Text { text: "Ends"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+                ThemedComboBox {
+                    id: repeatEndField
+                    Layout.fillWidth: true
+                    model: eventEditor.repeatEndOptions
+                    textRole: "label"
+                }
+                ThemedTextField {
+                    id: repeatCountField
+                    visible: repeatEndField.currentIndex === 1
+                    Layout.preferredWidth: visible ? 72 : 0
+                    text: "10"
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    horizontalAlignment: TextInput.AlignHCenter
+                }
+                Text {
+                    visible: repeatEndField.currentIndex === 1
+                    text: "occurrences"
+                    color: theme.foregroundMuted
+                    font.pixelSize: theme.baseFontSize
+                }
             }
             RowLayout {
                 Layout.fillWidth: true

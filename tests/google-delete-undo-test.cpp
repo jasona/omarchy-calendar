@@ -22,15 +22,22 @@ int main(int argc, char **argv)
             QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()).toUtf8());
 
     bool validDelete = false;
+    bool validSeriesDelete = false;
     QObject::connect(&server, &QTcpServer::newConnection, &app, [&] {
         while (auto *socket = server.nextPendingConnection()) {
             QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
                 const QByteArray request = socket->readAll();
                 if (!request.contains("\r\n\r\n")) return;
-                validDelete = request.startsWith(
-                    "DELETE /calendar/v3/calendars/primary%40example.com/events/google-delete-id")
-                    && request.contains("Authorization: Bearer delete-token")
-                    && request.toLower().contains("if-match: delete-etag");
+                if (request.startsWith(
+                        "DELETE /calendar/v3/calendars/primary%40example.com/events/series-2")) {
+                    validSeriesDelete = request.contains("Authorization: Bearer delete-token")
+                        && !request.toLower().contains("if-match:");
+                } else {
+                    validDelete = request.startsWith(
+                        "DELETE /calendar/v3/calendars/primary%40example.com/events/google-delete-id")
+                        && request.contains("Authorization: Bearer delete-token")
+                        && request.toLower().contains("if-match: delete-etag");
+                }
                 socket->write("HTTP/1.1 204 No Content\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
                 socket->disconnectFromHost();
             });
@@ -90,6 +97,33 @@ int main(int argc, char **argv)
     loop.exec();
     if (!completed || !validDelete || !database.nextPendingMutation(accountId).object().isEmpty())
         return 10;
+
+    QJsonObject recurring = remote;
+    recurring.insert(QStringLiteral("id"), QStringLiteral("series-instance-2"));
+    recurring.insert(QStringLiteral("recurringEventId"), QStringLiteral("series-2"));
+    recurring.insert(QStringLiteral("originalStartTime"), recurring.value(QStringLiteral("start")));
+    if (!database.applyGoogleEvents(accountId, calendarId, QJsonArray { recurring },
+                                    QStringLiteral("delete-series-sync"), false)) return 13;
+    QString seriesDelete = database.deletePendingEvent(QJsonObject {
+        { QStringLiteral("calendarId"), calendarId },
+        { QStringLiteral("id"), QStringLiteral("series-instance-2") },
+        { QStringLiteral("scope"), QStringLiteral("series") },
+        { QStringLiteral("seriesId"), QStringLiteral("series-2") }
+    });
+    if (seriesDelete.isEmpty() || !database.undoPendingDelete(seriesDelete)) return 14;
+    seriesDelete = database.deletePendingEvent(QJsonObject {
+        { QStringLiteral("calendarId"), calendarId },
+        { QStringLiteral("id"), QStringLiteral("series-instance-2") },
+        { QStringLiteral("scope"), QStringLiteral("series") },
+        { QStringLiteral("seriesId"), QStringLiteral("series-2") }
+    });
+    if (seriesDelete.isEmpty() || !database.finalizePendingDelete(seriesDelete)) return 15;
+    completed = false;
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    if (!mutations.start(accountId, QStringLiteral("delete-token"))) return 16;
+    loop.exec();
+    if (!completed || !validSeriesDelete
+        || !database.nextPendingMutation(accountId).object().isEmpty()) return 17;
 
     const qint64 startMs = QDateTime::fromString("2026-09-23T09:00:00-07:00", Qt::ISODate).toMSecsSinceEpoch();
     const QString localId = database.createPendingEvent(QJsonObject {

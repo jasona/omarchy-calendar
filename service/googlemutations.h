@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QObject>
 
 class Database;
@@ -25,6 +27,11 @@ private:
     void processNext();
     void handleReply(QNetworkReply *reply);
     void handleConflictReply(QNetworkReply *reply);
+    void fetchSeriesMaster();
+    void handleSeriesMasterReply(QNetworkReply *reply);
+    void handleFutureCreateReply(QNetworkReply *reply);
+    void truncateOriginalSeries();
+    void handleFutureTruncateReply(QNetworkReply *reply);
     void fetchCurrentEvent();
     void fail(const QString &message, int httpStatus);
     void complete();
@@ -40,6 +47,9 @@ private:
     QString m_currentProviderCalendarId;
     QString m_currentGoogleEventId;
     QString m_currentBaseEtag;
+    QJsonObject m_currentPayload;
+    QJsonObject m_currentSeriesParent;
+    QJsonArray m_truncatedRecurrence;
     QString m_lastError;
     QString m_retryAt;
     bool m_busy = false;

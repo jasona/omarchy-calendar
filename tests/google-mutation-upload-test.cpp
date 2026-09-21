@@ -57,8 +57,10 @@ int main(int argc, char **argv)
                         && body.value("id").toString().size() == 32
                         && body.value("summary").toString() == QStringLiteral("Upload contract")
                         && body.value("location").toString() == QStringLiteral("Before upload")
+                        && body.value("recurrence").toArray() == QJsonArray {
+                            QStringLiteral("RRULE:FREQ=WEEKLY;BYDAY=MO") }
                         && body.value("start").toObject().value("timeZone").toString() == QStringLiteral("America/Phoenix");
-                    respond(socket, R"({"id":"google-created-id","summary":"Upload contract","description":"","location":"Before upload","start":{"dateTime":"2026-09-21T09:00:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:00:00.000-07:00","timeZone":"America/Phoenix"},"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
+                    respond(socket, R"({"id":"google-created-id","summary":"Upload contract","description":"","location":"Before upload","start":{"dateTime":"2026-09-21T09:00:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:00:00.000-07:00","timeZone":"America/Phoenix"},"recurrence":["RRULE:FREQ=WEEKLY;BYDAY=MO"],"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
                 } else if (request.startsWith("GET /calendar/v3/calendars/primary%40example.com/events/google-created-id")) {
                     validConflictLookup = request.contains("Authorization: Bearer test-write-token");
                     respond(socket, R"({"id":"google-created-id","summary":"Upload contract","description":"Changed elsewhere","location":"Before upload","start":{"dateTime":"2026-09-21T09:00:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:00:00.000-07:00","timeZone":"America/Phoenix"},"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-remote","updated":"2026-09-21T03:30:00Z"})");
@@ -97,7 +99,8 @@ int main(int argc, char **argv)
     const QString localEventId = database.createPendingEvent(QJsonObject {
             { "calendarId", calendarId }, { "title", "Upload contract" },
             { "startMs", double(start) }, { "endMs", double(start + 3600000) },
-            { "timeZone", "America/Phoenix" }
+            { "timeZone", "America/Phoenix" },
+            { "recurrence", QJsonArray { QStringLiteral("RRULE:FREQ=WEEKLY;BYDAY=MO") } }
         });
     if (localEventId.isEmpty() || !database.updatePendingEvent(QJsonObject {
             { "id", localEventId }, { "calendarId", calendarId }, { "title", "Upload contract" },
@@ -117,7 +120,10 @@ int main(int argc, char **argv)
     loop.exec();
     const QJsonArray events = database.eventsForRange("2026-09-21", "2026-09-21").array();
     if (!completed || !validCreateRequest || !database.nextPendingMutation(accountId).object().isEmpty()
-        || events.size() != 1 || events.at(0).toObject().value("id").toString() != QStringLiteral("google-created-id"))
+        || events.size() != 1 || events.at(0).toObject().value("id").toString() != QStringLiteral("google-created-id")
+        || !events.at(0).toObject().value("isRecurring").toBool()
+        || !events.at(0).toObject().value("isSeriesMaster").toBool()
+        || events.at(0).toObject().value("seriesId").toString() != QStringLiteral("google-created-id"))
         return 6;
 
     if (!database.updatePendingEvent(QJsonObject {

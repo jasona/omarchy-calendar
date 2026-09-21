@@ -34,6 +34,7 @@ public:
     QString createPendingEvent(const QJsonObject &event);
     bool updatePendingEvent(const QJsonObject &event);
     QString deletePendingEvent(const QString &calendarId, const QString &eventId);
+    QString deletePendingEvent(const QJsonObject &event);
     bool undoPendingDelete(const QString &mutationId);
     bool finalizePendingDelete(const QString &mutationId);
     bool finalizeUndoableDeletes();

@@ -22,7 +22,7 @@ result="$(sqlite3 "$test_dir/calendar.db" \
 [[ "$result" == "3:2:1" ]]
 
 schema_version="$(sqlite3 "$test_dir/calendar.db" "SELECT MAX(version) FROM schema_migrations;")"
-[[ "$schema_version" == "6" ]]
+[[ "$schema_version" == "7" ]]
 
 account_tables="$(sqlite3 "$test_dir/calendar.db" \
   "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('accounts','sync_cursors','pending_mutations');")"

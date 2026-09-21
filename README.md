@@ -76,12 +76,25 @@ spring-forward times are rejected, repeated fall-back times offer first and
 second occurrence choices, and the inspector preserves the event's original zone
 while showing a local-time equivalent when it differs.
 
+Google recurrence identity now survives synchronization, local edits, delete and
+undo, and conflict rebasing. The inspector identifies recurring events and moved
+exceptions, and the local RRULE engine expands daily, weekly, monthly, and yearly
+rules with stable wall times across daylight-saving transitions. New events can
+repeat daily, on weekdays, weekly, monthly, yearly, or at a custom interval, with
+an optional occurrence count. The editor can apply a change to one occurrence,
+this and following occurrences, or the entire series. Series edits retrieve the
+parent event and use its current ETag. This-and-following changes split the rule
+into an earlier series and a deterministic new future series, preserving bounded
+occurrence counts without producing an exception for every instance.
+
 Choose **Delete event** or press `Delete` to remove a writable event
 immediately. A themed notification offers Undo for six seconds; Google does not
 receive the deletion until that window closes. The durable delete queue treats
 an already-absent remote event as success and restores the local event after a
 permanent provider rejection. Deleting a new event before its first upload
-cancels that creation without sending unnecessary provider traffic.
+cancels that creation without sending unnecessary provider traffic. Recurring
+events offer the same three scopes; future cancellation truncates the parent rule
+and whole-series cancellation targets the recurring parent.
 
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development
@@ -122,9 +135,11 @@ cd ..
 ./tests/test-google-auth-contract.sh build-service/omarchy-calendar-service
 ./tests/test-google-sync-retry.sh
 ./tests/test-google-mutation-upload.sh
+./tests/test-google-series-update.sh
 ./tests/test-google-all-day-upload.sh
 ./tests/test-google-delete-undo.sh
 ./tests/test-event-adjustment.sh
 ./tests/test-all-day-multiday.sh
 ./tests/test-timezone-contract.sh
+./tests/test-recurrence-contract.sh
 ```
