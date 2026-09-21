@@ -40,7 +40,7 @@ dbus-run-session -- bash -c '
   select_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.SetCalendarSelected missing true)"
 
   [[ "$status" == *"\"eventCount\":3"* ]]
-  [[ "$status" == *"\"schemaVersion\":2"* ]]
+  [[ "$status" == *"\"schemaVersion\":3"* ]]
   [[ "$range" == *"Design review"* ]]
   [[ "$range" == *"Conference"* ]]
   [[ "$search" == *"Design review"* ]]

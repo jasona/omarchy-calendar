@@ -29,6 +29,7 @@ public:
     Q_INVOKABLE bool beginGoogleAuthorization() const;
     Q_INVOKABLE bool disconnectGoogle() const;
     Q_INVOKABLE bool setCalendarSelected(const QString &calendarId, bool selected) const;
+    Q_INVOKABLE QString createEvent(const QVariantMap &event) const;
     Q_INVOKABLE bool syncNow() const;
     Q_INVOKABLE QVariantMap nextEvent() const;
 

@@ -1,6 +1,7 @@
 #include "database.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -122,6 +123,26 @@ int main(int argc, char **argv)
         return 12;
     if (database.syncCursor(accountId, primaryId) != QStringLiteral("sync-token-2"))
         return 13;
+    const QString localEventId = database.createPendingEvent(QJsonObject {
+        { QStringLiteral("calendarId"), primaryId },
+        { QStringLiteral("title"), QStringLiteral("Queued planning event") },
+        { QStringLiteral("location"), QStringLiteral("Local office") },
+        { QStringLiteral("startMs"), QDateTime::fromString(QStringLiteral("2026-09-21T15:00:00Z"), Qt::ISODate).toMSecsSinceEpoch() },
+        { QStringLiteral("endMs"), QDateTime::fromString(QStringLiteral("2026-09-21T16:00:00Z"), Qt::ISODate).toMSecsSinceEpoch() }
+    });
+    const QJsonObject status = database.status().object();
+    if (!localEventId.startsWith(QStringLiteral("local:"))
+        || status.value(QStringLiteral("schemaVersion")).toInt() != 3
+        || status.value(QStringLiteral("pendingMutationCount")).toInt() != 1
+        || !containsTitle(database.eventsForRange(QStringLiteral("2026-09-21"), QStringLiteral("2026-09-21")).array(),
+                          QStringLiteral("Queued planning event"))) {
+        std::fprintf(stderr, "create=%s schema=%d pending=%d error=%s\n",
+                     localEventId.toUtf8().constData(),
+                     status.value(QStringLiteral("schemaVersion")).toInt(),
+                     status.value(QStringLiteral("pendingMutationCount")).toInt(),
+                     database.lastError().toUtf8().constData());
+        return 26;
+    }
     if (!database.removeAccount(accountId))
         return 14;
     if (!database.accounts().array().isEmpty()

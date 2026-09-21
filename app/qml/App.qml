@@ -119,6 +119,10 @@ ApplicationWindow {
         refreshFeedMetadata()
     }
 
+    function openEventEditor() {
+        eventEditor.openForDate(currentView === "day" ? dayDate : new Date())
+    }
+
     function calendarVisible(calendarId) {
         return hiddenCalendarIds.indexOf(calendarId) < 0
     }
@@ -152,6 +156,7 @@ ApplicationWindow {
     Shortcut { sequence: "4"; enabled: window.currentView !== "search"; onActivated: window.currentView = "agenda" }
     Shortcut { sequence: "/"; enabled: window.currentView !== "search"; onActivated: window.currentView = "search" }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.currentView = "settings" }
+    Shortcut { sequence: "N"; enabled: !eventEditor.opened; onActivated: window.openEventEditor() }
     Shortcut { sequence: "Escape"; enabled: window.currentView === "search" || window.currentView === "settings"; onActivated: window.currentView = "week" }
 
     Rectangle {
@@ -219,7 +224,7 @@ ApplicationWindow {
                     }
 
                     CalendarButton { text: "⌕"; Layout.preferredWidth: 38; selected: window.currentView === "search"; onClicked: window.currentView = "search" }
-                    CalendarButton { text: "+  New event"; accentColor: theme.accent; selected: true }
+                    CalendarButton { text: "+  New event"; accentColor: theme.accent; selected: true; onClicked: window.openEventEditor() }
                 }
 
                 Rectangle {
@@ -431,7 +436,10 @@ ApplicationWindow {
 
                         Text {
                             width: parent.width
-                            text: window.selectedEvent.id ? "Stored offline by the local Omarchy Calendar service. Editing will arrive with Google account synchronization." : "Choose an event to see its details."
+                            text: !window.selectedEvent.id ? "Choose an event to see its details."
+                                  : window.selectedEvent.id.indexOf("local:") === 0
+                                    ? "Queued locally · waiting for Google write access. This event is safely stored and will survive a restart."
+                                    : "Stored offline by the local Omarchy Calendar service."
                             color: theme.foregroundMuted
                             font.pixelSize: theme.baseFontSize
                             lineHeight: 1.35
@@ -446,6 +454,93 @@ ApplicationWindow {
                             enabled: !!window.selectedEvent.eventUrl
                             onClicked: Qt.openUrlExternally(window.selectedEvent.eventUrl)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+
+    Popup {
+        id: eventEditor
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 470
+        height: 570
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property var writableCalendars: window.calendarList.filter(function(calendar) {
+            return calendar.accessRole === "owner" || calendar.accessRole === "writer"
+        })
+
+        function openForDate(date) {
+            let start = new Date(date)
+            let now = new Date()
+            start.setHours(date.toDateString() === now.toDateString() ? now.getHours() + 1 : 9, 0, 0, 0)
+            titleField.text = ""
+            locationField.text = ""
+            descriptionField.text = ""
+            dateField.text = Qt.formatDate(start, "yyyy-MM-dd")
+            startField.text = Qt.formatTime(start, "HH:mm")
+            let end = new Date(start.getTime() + 60 * 60 * 1000)
+            endField.text = Qt.formatTime(end, "HH:mm")
+            errorText.text = ""
+            open()
+            titleField.forceActiveFocus()
+        }
+
+        background: Rectangle {
+            radius: 18
+            color: theme.backgroundDeep
+            border.width: 1
+            border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+        }
+
+        ColumnLayout {
+            anchors { fill: parent; margins: 26 }
+            spacing: 14
+            Text { text: "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
+            Text { text: "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            TextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
+            ComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name" }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField { id: dateField; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD" }
+                TextField { id: startField; Layout.preferredWidth: 92; placeholderText: "09:00" }
+                Text { text: "to"; color: theme.foregroundMuted }
+                TextField { id: endField; Layout.preferredWidth: 92; placeholderText: "10:00" }
+            }
+            TextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
+            TextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)"; wrapMode: TextEdit.Wrap }
+            Text { id: errorText; Layout.fillWidth: true; color: theme.red; font.pixelSize: theme.baseFontSize; wrapMode: Text.WordWrap }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                CalendarButton { text: "Cancel"; onClicked: eventEditor.close() }
+                CalendarButton {
+                    text: "Create event"
+                    selected: true
+                    enabled: titleField.text.trim().length > 0 && calendarField.currentIndex >= 0
+                    onClicked: {
+                        let parts = dateField.text.split("-")
+                        let startParts = startField.text.split(":")
+                        let endParts = endField.text.split(":")
+                        if (parts.length !== 3 || startParts.length !== 2 || endParts.length !== 2) {
+                            errorText.text = "Enter the date as YYYY-MM-DD and times as HH:MM."
+                            return
+                        }
+                        let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(startParts[0]), Number(startParts[1]))
+                        let end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(endParts[0]), Number(endParts[1]))
+                        let calendar = eventEditor.writableCalendars[calendarField.currentIndex]
+                        let id = eventStore.createEvent({ calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: false, timeZone: calendar.timeZone || "" })
+                        if (!id) {
+                            errorText.text = end <= start ? "The end time must be after the start time." : "The event could not be saved."
+                            return
+                        }
+                        eventEditor.close()
+                        window.refreshFeedMetadata()
                     }
                 }
             }

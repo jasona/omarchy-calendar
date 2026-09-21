@@ -28,6 +28,7 @@ public:
     bool updateAccountSyncState(const QString &id, const QString &syncState,
                                 const QString &lastError = {});
     bool setCalendarSelected(const QString &calendarId, bool selected);
+    QString createPendingEvent(const QJsonObject &event);
     bool removeAccount(const QString &id);
     bool setSyncCursor(const QString &accountId, const QString &calendarId,
                        const QString &cursor);

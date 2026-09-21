@@ -133,6 +133,21 @@ bool CalendarService::SetCalendarSelected(const QString &calendarId, bool select
     return true;
 }
 
+QString CalendarService::CreateEvent(const QString &eventJson)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(eventJson.toUtf8());
+    if (!document.isObject())
+        return {};
+    const QString eventId = m_database.createPendingEvent(document.object());
+    if (eventId.isEmpty())
+        return {};
+    if (!m_database.exportCompatibilityFeed(m_feedPath))
+        qWarning().noquote() << m_database.lastError();
+    ensureWatching();
+    emit EventsChanged();
+    return eventId;
+}
+
 bool CalendarService::SyncNow()
 {
     return m_googleSync.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());

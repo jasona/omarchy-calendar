@@ -317,6 +317,15 @@ bool EventStore::setCalendarSelected(const QString &calendarId, bool selected) c
     return reply.isValid() && reply.value();
 }
 
+QString EventStore::createEvent(const QVariantMap &event) const
+{
+    if (!serviceBacked())
+        return {};
+    const QString json = QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(event)).toJson(QJsonDocument::Compact));
+    const QDBusReply<QString> reply = m_service->call(QStringLiteral("CreateEvent"), json);
+    return reply.isValid() ? reply.value() : QString();
+}
+
 bool EventStore::syncNow() const
 {
     if (!serviceBacked())

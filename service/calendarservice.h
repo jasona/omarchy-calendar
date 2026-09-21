@@ -27,6 +27,7 @@ public slots:
     Q_SCRIPTABLE bool BeginGoogleAuthorization();
     Q_SCRIPTABLE bool DisconnectGoogle();
     Q_SCRIPTABLE bool SetCalendarSelected(const QString &calendarId, bool selected);
+    Q_SCRIPTABLE QString CreateEvent(const QString &eventJson);
     Q_SCRIPTABLE bool SyncNow();
     Q_SCRIPTABLE bool Reload();
 

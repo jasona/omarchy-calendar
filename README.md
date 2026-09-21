@@ -36,6 +36,10 @@ Arrow keys move through days and events, `J`/`K` select the next or previous
 event or week row, and `Enter` opens the focused day or event. In Search,
 press Down to move from the query field into the results.
 
+Press `N` or choose **New event** to open the event composer. New events are
+stored immediately in SQLite and placed in the durable mutation queue so they
+survive restarts while Google write authorization and upload are completed.
+
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development
 OAuth client setup is documented in

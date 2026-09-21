@@ -200,6 +200,36 @@ bool Database::migrate()
         }
     }
 
+    QSqlQuery versionThree(m_database);
+    if (!versionThree.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=3"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionThree.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionThree.next()) {
+        const QStringList versionThreeStatements {
+            QStringLiteral(
+                "CREATE TABLE pending_mutations ("
+                "id TEXT PRIMARY KEY, account_id TEXT NOT NULL, calendar_id TEXT NOT NULL, "
+                "provider_event_id TEXT NOT NULL, operation TEXT NOT NULL, payload_json TEXT NOT NULL, "
+                "base_etag TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'queued', "
+                "attempt_count INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE, "
+                "FOREIGN KEY(calendar_id) REFERENCES calendars(id) ON DELETE CASCADE)"),
+            QStringLiteral("CREATE INDEX pending_mutations_state_idx ON pending_mutations(state, created_at)"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionThreeStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
     if (!m_database.commit()) {
         setError(QStringLiteral("Migration transaction could not commit"), m_database.lastError().text());
         return false;
@@ -359,7 +389,8 @@ bool Database::exportCompatibilityFeed(const QString &feedPath)
         "SELECT e.provider_event_id, e.calendar_id, c.name, c.color, e.date_key, "
         "e.start_ms, e.end_ms, e.all_day, e.title, e.location, e.event_url "
         "FROM events e JOIN calendars c ON c.id=e.calendar_id "
-        "WHERE e.source='google' AND c.selected=1 ORDER BY e.date_key, e.start_ms, e.title"), m_database);
+        "WHERE e.source IN ('google','local-pending') AND c.selected=1 "
+        "ORDER BY e.date_key, e.start_ms, e.title"), m_database);
     if (query.lastError().isValid()) {
         setError(QStringLiteral("Compatibility export query failed"), query.lastError().text());
         return false;
@@ -553,6 +584,57 @@ bool Database::setCalendarSelected(const QString &calendarId, bool selected)
     }
     m_lastError.clear();
     return true;
+}
+
+QString Database::createPendingEvent(const QJsonObject &event)
+{
+    const QString calendarId = event.value("calendarId").toString();
+    const QString title = event.value("title").toString().trimmed();
+    const qint64 startMs = qint64(event.value("startMs").toDouble());
+    const qint64 endMs = qint64(event.value("endMs").toDouble());
+    if (calendarId.isEmpty() || title.isEmpty() || startMs <= 0 || endMs <= startMs) {
+        setError("Event could not be created", "title, calendar, and valid times are required");
+        return {};
+    }
+    QSqlQuery calendar(m_database);
+    calendar.prepare("SELECT account_id,time_zone,access_role FROM calendars WHERE id=? AND source='google'");
+    calendar.addBindValue(calendarId);
+    if (!calendar.exec() || !calendar.next()
+        || (calendar.value(2).toString() != "owner" && calendar.value(2).toString() != "writer")) {
+        setError("Event could not be created", "calendar is unavailable or read-only");
+        return {};
+    }
+    QTimeZone zone(event.value("timeZone").toString(calendar.value(1).toString()).toUtf8());
+    if (!zone.isValid()) zone = QTimeZone::systemTimeZone();
+    const QString eventId = "local:" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString mutationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    QJsonObject payload = event;
+    payload.insert("id", eventId);
+    payload.insert("timeZone", QString::fromUtf8(zone.id()));
+    const QString json = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    if (!m_database.transaction()) return {};
+    QSqlQuery row(m_database);
+    row.prepare("INSERT INTO events(provider_event_id,date_key,calendar_id,start_ms,end_ms,all_day,title,description,location,time_zone,status,transparency,raw_json,source) VALUES(?,?,?,?,?,?,?,?,?,?,'confirmed','opaque',?,'local-pending')");
+    row.addBindValue(eventId);
+    row.addBindValue(QDateTime::fromMSecsSinceEpoch(startMs, zone).date().toString(Qt::ISODate));
+    row.addBindValue(calendarId); row.addBindValue(startMs); row.addBindValue(endMs);
+    row.addBindValue(event.value("allDay").toBool() ? 1 : 0); row.addBindValue(title);
+    row.addBindValue(event.value("description").toString(QStringLiteral("")));
+    row.addBindValue(event.value("location").toString(QStringLiteral("")));
+    row.addBindValue(QString::fromUtf8(zone.id())); row.addBindValue(json);
+    QSqlQuery mutation(m_database);
+    mutation.prepare("INSERT INTO pending_mutations(id,account_id,calendar_id,provider_event_id,operation,payload_json,created_at,updated_at) VALUES(?,?,?,?,'create',?,?,?)");
+    mutation.addBindValue(mutationId); mutation.addBindValue(calendar.value(0).toString());
+    mutation.addBindValue(calendarId); mutation.addBindValue(eventId); mutation.addBindValue(json);
+    mutation.addBindValue(now); mutation.addBindValue(now);
+    if (!row.exec() || !mutation.exec() || !m_database.commit()) {
+        setError("Event could not be queued", row.lastError().text() + mutation.lastError().text());
+        m_database.rollback();
+        return {};
+    }
+    m_lastError.clear();
+    return eventId;
 }
 
 bool Database::setSyncCursor(const QString &accountId, const QString &calendarId,
@@ -857,9 +939,10 @@ QJsonDocument Database::status() const
         "WHERE c.selected=1 AND (c.source!='compat-json' OR NOT EXISTS ("
         "SELECT 1 FROM accounts WHERE provider='google' AND last_sync_at!=''))), "
         "(SELECT COUNT(*) FROM accounts), "
+        "(SELECT COUNT(*) FROM pending_mutations WHERE state='queued'), "
         "(SELECT MAX(value) FROM metadata WHERE key='compat_feed_synced_at')"), m_database);
     QJsonObject result {
-        { QStringLiteral("schemaVersion"), 2 },
+        { QStringLiteral("schemaVersion"), 3 },
         { QStringLiteral("databasePath"), m_path },
         { QStringLiteral("lastError"), m_lastError }
     };
@@ -867,7 +950,8 @@ QJsonDocument Database::status() const
         result.insert(QStringLiteral("calendarCount"), counts.value(0).toInt());
         result.insert(QStringLiteral("eventCount"), counts.value(1).toInt());
         result.insert(QStringLiteral("accountCount"), counts.value(2).toInt());
-        result.insert(QStringLiteral("feedSyncedAt"), counts.value(3).toString());
+        result.insert(QStringLiteral("pendingMutationCount"), counts.value(3).toInt());
+        result.insert(QStringLiteral("feedSyncedAt"), counts.value(4).toString());
     }
     return QJsonDocument(result);
 }
