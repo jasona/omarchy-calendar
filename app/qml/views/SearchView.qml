@@ -129,7 +129,9 @@ Item {
                     }
                     Text {
                         width: parent.width
-                        text: Qt.formatDate(new Date(modelData.startMs), "ddd, MMM d, yyyy")
+                        text: Qt.formatDate(modelData.allDay
+                                            ? new Date(modelData.allDayStartDate + "T12:00:00")
+                                            : new Date(modelData.startMs), "ddd, MMM d, yyyy")
                               + "  ·  " + (modelData.allDay ? "All day" : Qt.formatTime(new Date(modelData.startMs), "h:mm AP"))
                               + "  ·  " + (modelData.location || modelData.calendarName)
                         color: theme.foregroundMuted

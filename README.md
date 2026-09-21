@@ -63,6 +63,12 @@ control, use `Alt+↑/↓` to move by 15 minutes, `Alt+←/→` to move by a day
 `Alt+Shift+↑/↓` to resize. Rapid adjustments are coalesced locally before the
 latest ETag-protected update is sent to Google.
 
+The composer supports all-day events and separate start and end dates. All-day
+spans retain Google's date-only start and exclusive end values without passing
+through UTC, while timed events that cross midnight appear on each covered day.
+All-day events can be dragged across days in Week and Month, moved with the same
+keyboard shortcuts, and converted to or from scheduled time in the composer.
+
 Choose **Delete event** or press `Delete` to remove a writable event
 immediately. A themed notification offers Undo for six seconds; Google does not
 receive the deletion until that window closes. The durable delete queue treats
@@ -109,6 +115,8 @@ cd ..
 ./tests/test-google-auth-contract.sh build-service/omarchy-calendar-service
 ./tests/test-google-sync-retry.sh
 ./tests/test-google-mutation-upload.sh
+./tests/test-google-all-day-upload.sh
 ./tests/test-google-delete-undo.sh
 ./tests/test-event-adjustment.sh
+./tests/test-all-day-multiday.sh
 ```

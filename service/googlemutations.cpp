@@ -30,8 +30,12 @@ QJsonObject googleEventBody(const QJsonObject &payload, bool includeId)
     QJsonObject start;
     QJsonObject end;
     if (payload.value(QStringLiteral("allDay")).toBool()) {
-        start.insert(QStringLiteral("date"), QDateTime::fromMSecsSinceEpoch(startMs, zone).date().toString(Qt::ISODate));
-        end.insert(QStringLiteral("date"), QDateTime::fromMSecsSinceEpoch(endMs, zone).date().toString(Qt::ISODate));
+        const QString startDate = payload.value(QStringLiteral("allDayStartDate")).toString(
+            QDateTime::fromMSecsSinceEpoch(startMs, zone).date().toString(Qt::ISODate));
+        const QString endDate = payload.value(QStringLiteral("allDayEndDate")).toString(
+            QDateTime::fromMSecsSinceEpoch(endMs, zone).date().toString(Qt::ISODate));
+        start.insert(QStringLiteral("date"), startDate);
+        end.insert(QStringLiteral("date"), endDate);
     } else {
         start.insert(QStringLiteral("dateTime"), QDateTime::fromMSecsSinceEpoch(startMs, zone).toString(Qt::ISODateWithMs));
         start.insert(QStringLiteral("timeZone"), QString::fromUtf8(zone.id()));

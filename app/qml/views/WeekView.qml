@@ -45,6 +45,21 @@ Item {
         return Math.max(38, (end.getTime() - start.getTime()) / 3600000 * hourHeight - 3)
     }
 
+    function segmentBoundary(dateKey, nextDay) {
+        let parts = dateKey.split("-")
+        let result = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+        if (nextDay) result.setDate(result.getDate() + 1)
+        return result
+    }
+
+    function segmentStart(eventData) {
+        return new Date(Math.max(eventData.startMs, segmentBoundary(eventData.dateKey, false).getTime()))
+    }
+
+    function segmentEnd(eventData) {
+        return new Date(Math.min(eventData.endMs, segmentBoundary(eventData.dateKey, true).getTime()))
+    }
+
     function eventTime(eventData) {
         if (eventData.allDay)
             return "All day"
@@ -231,6 +246,20 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
+                        preventStealing: pressed && root.canAdjustEvent(modelData)
+                        property real pressX: 0
+                        property bool dragged: false
+                        onPressed: function(mouse) { pressX = mouse.x; dragged = false }
+                        onPositionChanged: function(mouse) {
+                            if (pressed && root.canAdjustEvent(modelData))
+                                dragged = Math.abs(mouse.x - pressX) > 5
+                        }
+                        onReleased: function(mouse) {
+                            if (!dragged || !root.canAdjustEvent(modelData)) return
+                            let days = Math.round((mouse.x - pressX) / (dayHeader.width / 7))
+                            if (days) root.eventAdjusted(modelData, 0, days, 0)
+                            dragged = false
+                        }
                         onClicked: {
                             root.eventCursor = root.eventIndex(modelData)
                             root.cursorDay = column
@@ -312,8 +341,8 @@ Item {
                         delegate: EventCard {
                             required property var modelData
                             required property int index
-                            property date startDate: new Date(modelData.startMs)
-                            property date endDate: new Date(modelData.endMs)
+                            property date startDate: root.segmentStart(modelData)
+                            property date endDate: root.segmentEnd(modelData)
                             property int column: root.dayIndex(modelData.dateKey)
                             property int lane: modelData.layoutColumn || 0
                             property int laneCount: modelData.layoutColumnCount || 1

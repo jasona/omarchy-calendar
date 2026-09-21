@@ -12,6 +12,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <cstdio>
 
 namespace {
 void respond(QTcpSocket *socket, const QByteArray &body, int status = 200,
@@ -139,8 +140,14 @@ int main(int argc, char **argv)
         || updatedEvents.at(0).toObject().value("title").toString() != QStringLiteral("Updated contract")
         || updatedEvents.at(0).toObject().value("description").toString() != QStringLiteral("Changed elsewhere")
         || updatedEvents.at(0).toObject().value("location").toString() != QStringLiteral("Phoenix")
-        || updatedEvents.at(0).toObject().value("etag").toString() != QStringLiteral("etag-2"))
+        || updatedEvents.at(0).toObject().value("etag").toString() != QStringLiteral("etag-2")) {
+        std::fprintf(stderr, "update result completed=%d request=%d lookup=%d attempts=%d pending=%d events=%s error=%s\n",
+                     completed, validUpdateRequest, validConflictLookup, updateAttempts,
+                     database.nextPendingMutation(accountId).object().isEmpty(),
+                     qPrintable(QJsonDocument(updatedEvents).toJson(QJsonDocument::Compact)),
+                     qPrintable(database.lastError()));
         return 10;
+    }
 
     if (!database.updatePendingEvent(QJsonObject {
             { "id", "google-created-id" }, { "calendarId", calendarId },

@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     });
     const QJsonObject status = database.status().object();
     if (!localEventId.startsWith(QStringLiteral("local:"))
-        || status.value(QStringLiteral("schemaVersion")).toInt() != 4
+        || status.value(QStringLiteral("schemaVersion")).toInt() != 5
         || status.value(QStringLiteral("pendingMutationCount")).toInt() != 1
         || !containsTitle(database.eventsForRange(QStringLiteral("2026-09-21"), QStringLiteral("2026-09-21")).array(),
                           QStringLiteral("Queued planning event"))) {

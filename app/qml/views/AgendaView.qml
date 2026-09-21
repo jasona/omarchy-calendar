@@ -23,6 +23,15 @@ Item {
                     Qt.formatDate(addDays(anchorDate, 45), "yyyy-MM-dd"))
     }
 
+    function eventTimeLabel(eventData) {
+        if (eventData.allDay)
+            return "ALL DAY"
+        let startKey = Qt.formatDate(new Date(eventData.startMs), "yyyy-MM-dd")
+        if (eventData.dateKey !== startKey)
+            return "CONTINUES"
+        return Qt.formatTime(new Date(eventData.startMs), "h:mm AP")
+    }
+
     function moveSelection(amount) {
         if (!visibleEvents.length)
             return
@@ -111,7 +120,7 @@ Item {
                     Text {
                         anchors { left: parent.left; leftMargin: 24; verticalCenter: parent.verticalCenter }
                         width: 112
-                        text: modelData.allDay ? "ALL DAY" : Qt.formatTime(new Date(modelData.startMs), "h:mm AP")
+                        text: root.eventTimeLabel(modelData)
                         color: theme.foregroundMuted
                         font.pixelSize: theme.baseFontSize - 1
                         font.weight: Font.DemiBold

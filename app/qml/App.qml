@@ -92,6 +92,22 @@ ApplicationWindow {
                 + " – " + Qt.formatTime(new Date(eventData.endMs), "h:mm AP")
     }
 
+    function formatEventDate(eventData) {
+        if (!eventData || !eventData.id)
+            return ""
+        let start = eventData.allDay
+                  ? new Date(eventData.allDayStartDate + "T12:00:00")
+                  : new Date(eventData.startMs)
+        let end = eventData.allDay
+                ? new Date(eventData.allDayEndDate + "T12:00:00")
+                : new Date(eventData.endMs - 1)
+        if (eventData.allDay)
+            end.setDate(end.getDate() - 1)
+        if (Qt.formatDate(start, "yyyy-MM-dd") === Qt.formatDate(end, "yyyy-MM-dd"))
+            return Qt.formatDate(start, "dddd, MMMM d")
+        return Qt.formatDate(start, "MMM d") + " – " + Qt.formatDate(end, "MMM d, yyyy")
+    }
+
     function refreshFeedMetadata() {
         calendarList = eventStore.calendars()
         accountList = eventStore.accounts()
@@ -127,7 +143,7 @@ ApplicationWindow {
 
     function eventEditable(eventData) {
         if (!eventData || !eventData.id || eventData.source === "compat-json"
-                || eventData.allDay || eventData.multiDay)
+                )
             return false
         return calendarList.some(function(calendar) {
             return calendar.id === eventData.calendarId
@@ -146,6 +162,17 @@ ApplicationWindow {
         if (!eventEditable(source)) return false
         let start = new Date(source.startMs)
         let end = new Date(source.endMs)
+        if (source.allDay) {
+            let startDate = new Date(source.allDayStartDate + "T12:00:00")
+            let endDate = new Date(source.allDayEndDate + "T12:00:00")
+            startDate.setDate(startDate.getDate() + dayDelta)
+            endDate.setDate(endDate.getDate() + dayDelta + Math.round(resizeDelta / 1440))
+            if (endDate <= startDate) return false
+            start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+            end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
+            minuteDelta = 0
+            dayDelta = 0
+        }
         if (dayDelta) {
             start.setDate(start.getDate() + dayDelta)
             end.setDate(end.getDate() + dayDelta)
@@ -163,6 +190,11 @@ ApplicationWindow {
             location: source.location || "", allDay: false,
             startMs: start.getTime(), endMs: end.getTime(),
             timeZone: source.timeZone || ""
+        }
+        if (source.allDay) {
+            payload.allDay = true
+            payload.allDayStartDate = Qt.formatDate(start, "yyyy-MM-dd")
+            payload.allDayEndDate = Qt.formatDate(end, "yyyy-MM-dd")
         }
         if (!eventStore.updateEvent(payload)) return false
         selectedEvent = Object.assign({}, source, payload)
@@ -505,7 +537,7 @@ ApplicationWindow {
 
                         Column {
                             spacing: 5
-                            Text { text: window.selectedEvent.id ? Qt.formatDate(new Date(window.selectedEvent.startMs), "dddd, MMMM d").toUpperCase() : ""; color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 2); font.weight: Font.Bold; font.letterSpacing: 0.8 }
+                            Text { text: window.formatEventDate(window.selectedEvent).toUpperCase(); color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 2); font.weight: Font.Bold; font.letterSpacing: 0.8 }
                             Text { text: window.formatEventTime(window.selectedEvent); color: theme.foreground; font.pixelSize: theme.baseFontSize + 1 }
                         }
 
@@ -533,7 +565,9 @@ ApplicationWindow {
                         Text {
                             visible: window.eventEditable(window.selectedEvent)
                             width: parent.width
-                            text: "Drag to move · drag the lower edge to resize\nAlt+arrows move · Alt+Shift+↑/↓ resize"
+                            text: window.selectedEvent.allDay
+                                  ? "Drag across Week or Month to move · Alt+←/→ moves by a day\nEdit the event to switch between all-day and scheduled time."
+                                  : "Drag to move · drag the lower edge to resize\nAlt+arrows move · Alt+Shift+↑/↓ resize"
                             color: theme.accent
                             opacity: 0.82
                             font.pixelSize: Math.max(10, theme.baseFontSize - 2)
@@ -616,7 +650,7 @@ ApplicationWindow {
         parent: Overlay.overlay
         anchors.centerIn: parent
         width: 470
-        height: 570
+        height: 640
         modal: true
         focus: true
         padding: 0
@@ -635,7 +669,9 @@ ApplicationWindow {
             titleField.text = ""
             locationField.text = ""
             descriptionField.text = ""
+            allDayToggle.checked = false
             dateField.text = Qt.formatDate(start, "yyyy-MM-dd")
+            endDateField.text = Qt.formatDate(start, "yyyy-MM-dd")
             startField.text = Qt.formatTime(start, "HH:mm")
             let end = new Date(start.getTime() + 60 * 60 * 1000)
             endField.text = Qt.formatTime(end, "HH:mm")
@@ -651,7 +687,11 @@ ApplicationWindow {
             descriptionField.text = eventData.description || ""
             let start = new Date(eventData.startMs)
             let end = new Date(eventData.endMs)
-            dateField.text = Qt.formatDate(start, "yyyy-MM-dd")
+            allDayToggle.checked = !!eventData.allDay
+            dateField.text = eventData.allDay ? eventData.allDayStartDate : Qt.formatDate(start, "yyyy-MM-dd")
+            let inclusiveEnd = eventData.allDay ? new Date(eventData.allDayEndDate + "T12:00:00") : end
+            if (eventData.allDay) inclusiveEnd.setDate(inclusiveEnd.getDate() - 1)
+            endDateField.text = Qt.formatDate(inclusiveEnd, "yyyy-MM-dd")
             startField.text = Qt.formatTime(start, "HH:mm")
             endField.text = Qt.formatTime(end, "HH:mm")
             errorText.text = ""
@@ -667,16 +707,25 @@ ApplicationWindow {
 
         function saveEvent() {
             let parts = dateField.text.split("-")
+            let endDateParts = endDateField.text.split("-")
             let startParts = startField.text.split(":")
             let endParts = endField.text.split(":")
-            if (parts.length !== 3 || startParts.length !== 2 || endParts.length !== 2) {
-                errorText.text = "Enter the date as YYYY-MM-DD and times as HH:MM."
+            if (parts.length !== 3 || endDateParts.length !== 3
+                    || (!allDayToggle.checked && (startParts.length !== 2 || endParts.length !== 2))) {
+                errorText.text = "Enter dates as YYYY-MM-DD and times as HH:MM."
                 return
             }
-            let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(startParts[0]), Number(startParts[1]))
-            let end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(endParts[0]), Number(endParts[1]))
+            let start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]),
+                                 allDayToggle.checked ? 0 : Number(startParts[0]), allDayToggle.checked ? 0 : Number(startParts[1]))
+            let end = new Date(Number(endDateParts[0]), Number(endDateParts[1]) - 1, Number(endDateParts[2]),
+                               allDayToggle.checked ? 0 : Number(endParts[0]), allDayToggle.checked ? 0 : Number(endParts[1]))
+            if (allDayToggle.checked) end.setDate(end.getDate() + 1)
             let calendar = writableCalendars[calendarField.currentIndex]
-            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: false, timeZone: editing ? (editingEvent.timeZone || calendar.timeZone || "") : (calendar.timeZone || "") }
+            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: start.getTime(), endMs: end.getTime(), allDay: allDayToggle.checked, timeZone: editing ? (editingEvent.timeZone || calendar.timeZone || "") : (calendar.timeZone || "") }
+            if (allDayToggle.checked) {
+                payload.allDayStartDate = dateField.text
+                payload.allDayEndDate = Qt.formatDate(end, "yyyy-MM-dd")
+            }
             if (editing)
                 payload.id = editingEvent.id
             let saved = editing ? eventStore.updateEvent(payload) : !!eventStore.createEvent(payload)
@@ -706,12 +755,22 @@ ApplicationWindow {
             Text { text: eventEditor.editing ? "Changes are saved locally first, then synchronized with Google." : "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
             ThemedComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name"; enabled: !eventEditor.editing }
+            CalendarButton {
+                id: allDayToggle
+                checkable: true
+                text: checked ? "✓  All-day event" : "All-day event"
+                selected: checked
+                Layout.alignment: Qt.AlignLeft
+            }
             RowLayout {
                 Layout.fillWidth: true
                 ThemedTextField { id: dateField; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD" }
-                ThemedTextField { id: startField; Layout.preferredWidth: 92; placeholderText: "09:00" }
-                Text { text: "to"; color: theme.foregroundMuted }
-                ThemedTextField { id: endField; Layout.preferredWidth: 92; placeholderText: "10:00" }
+                ThemedTextField { id: startField; visible: !allDayToggle.checked; Layout.preferredWidth: visible ? 92 : 0; placeholderText: "09:00" }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                ThemedTextField { id: endDateField; Layout.fillWidth: true; placeholderText: "End date · YYYY-MM-DD" }
+                ThemedTextField { id: endField; visible: !allDayToggle.checked; Layout.preferredWidth: visible ? 92 : 0; placeholderText: "10:00" }
             }
             ThemedTextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
             ThemedTextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)" }
