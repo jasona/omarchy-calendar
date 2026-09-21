@@ -503,17 +503,17 @@ ApplicationWindow {
             spacing: 14
             Text { text: "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
             Text { text: "Saved instantly on this device and queued for Google."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-            TextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
-            ComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name" }
+            ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
+            ThemedComboBox { id: calendarField; Layout.fillWidth: true; model: eventEditor.writableCalendars; textRole: "name" }
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: dateField; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD" }
-                TextField { id: startField; Layout.preferredWidth: 92; placeholderText: "09:00" }
+                ThemedTextField { id: dateField; Layout.fillWidth: true; placeholderText: "YYYY-MM-DD" }
+                ThemedTextField { id: startField; Layout.preferredWidth: 92; placeholderText: "09:00" }
                 Text { text: "to"; color: theme.foregroundMuted }
-                TextField { id: endField; Layout.preferredWidth: 92; placeholderText: "10:00" }
+                ThemedTextField { id: endField; Layout.preferredWidth: 92; placeholderText: "10:00" }
             }
-            TextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
-            TextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)"; wrapMode: TextEdit.Wrap }
+            ThemedTextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
+            ThemedTextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)" }
             Text { id: errorText; Layout.fillWidth: true; color: theme.red; font.pixelSize: theme.baseFontSize; wrapMode: Text.WordWrap }
             RowLayout {
                 Layout.fillWidth: true
