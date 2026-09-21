@@ -37,6 +37,7 @@ public:
     bool setMutationState(const QString &mutationId, const QString &state,
                           const QString &error = {}, bool incrementAttempt = false);
     bool completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
+    bool rebaseUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool completeUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool removeAccount(const QString &id);
     bool setSyncCursor(const QString &accountId, const QString &calendarId,

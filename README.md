@@ -51,6 +51,10 @@ composer with its current title, time, location, and description. Changes are
 applied locally in one transaction and queued for Google with the event ETag.
 Edits made before a new event uploads are folded into its existing create
 operation, while subsequent edits use an authenticated Google `PATCH`.
+If Google reports that the event changed elsewhere, the service fetches the
+current version and performs a three-way merge. Remote-only changes are kept
+and the edit retries with the new ETag; overlapping field changes stop safely
+and appear as a named conflict in Settings.
 
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development

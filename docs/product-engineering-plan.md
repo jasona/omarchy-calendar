@@ -27,6 +27,7 @@ As of September 20, 2026, the first Phase 0 prototype is running:
 - Scope-aware editing upgrade: schema version 4 records granted capabilities and Settings offers an explicit Google consent upgrade before queued mutations can upload.
 - Google create uploader with exact event payload conversion, durable retry/blocked states, atomic local-to-provider identity reconciliation, compatibility-feed refresh, and deterministic localhost API coverage.
 - Phase 2 editing slice with a prefilled native composer, optimistic transactional updates, create-operation coalescing, ETag-protected Google PATCH uploads, and response reconciliation.
+- Safe edit-conflict recovery with current-event lookup, field-level three-way merging, automatic retry for non-overlapping changes, and an explicit conflict state for overlapping changes.
 - CMake project plus a qmake bootstrap for the current development machine.
 - Real Wayland visual review with a scoped opaque-window rule for calendar legibility.
 

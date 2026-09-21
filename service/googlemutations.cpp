@@ -83,8 +83,10 @@ void GoogleMutations::cancel()
     for (auto *reply : m_network->findChildren<QNetworkReply *>()) reply->abort();
     m_busy = false;
     m_retryPending = false;
+    m_conflict = false;
     m_currentMutationId.clear();
     m_currentOperation.clear();
+    m_currentProviderCalendarId.clear();
     m_currentGoogleEventId.clear();
     m_currentBaseEtag.clear();
     emit stateChanged();
@@ -96,12 +98,14 @@ void GoogleMutations::processNext()
     if (mutation.isEmpty()) { complete(); return; }
     m_currentMutationId = mutation.value(QStringLiteral("id")).toString();
     m_currentOperation = mutation.value(QStringLiteral("operation")).toString();
+    m_currentProviderCalendarId = mutation.value(QStringLiteral("providerCalendarId")).toString();
     m_currentGoogleEventId = mutation.value(QStringLiteral("providerEventId")).toString();
     m_currentBaseEtag = mutation.value(QStringLiteral("baseEtag")).toString();
     if (m_currentOperation == QStringLiteral("create"))
         m_currentGoogleEventId = mutation.value(QStringLiteral("payload")).toObject()
                                      .value(QStringLiteral("googleEventId")).toString();
     m_busy = true;
+    m_conflict = false;
     m_lastError.clear();
     m_retryAt.clear();
     m_database.setMutationState(m_currentMutationId, QStringLiteral("uploading"), {}, true);
@@ -145,6 +149,10 @@ void GoogleMutations::handleReply(QNetworkReply *reply)
         connect(existing, &QNetworkReply::finished, this, [this, existing] { handleReply(existing); });
         return;
     }
+    if (m_currentOperation == QStringLiteral("update") && status == 412) {
+        fetchCurrentEvent();
+        return;
+    }
     if (status < 200 || status >= 300) {
         fail(responseError(body, status == 0 ? networkError
              : QStringLiteral("Google event %1 failed (%2)")
@@ -166,8 +174,43 @@ void GoogleMutations::handleReply(QNetworkReply *reply)
     m_changed = true;
     m_currentMutationId.clear();
     m_currentOperation.clear();
+    m_currentProviderCalendarId.clear();
     m_currentGoogleEventId.clear();
     m_currentBaseEtag.clear();
+    processNext();
+}
+
+void GoogleMutations::fetchCurrentEvent()
+{
+    const QByteArray calendarId = QUrl::toPercentEncoding(m_currentProviderCalendarId);
+    const QByteArray eventId = QUrl::toPercentEncoding(m_currentGoogleEventId);
+    QNetworkRequest request(QUrl::fromEncoded(m_apiBaseUrl.toUtf8()
+        + QByteArrayLiteral("/calendar/v3/calendars/") + calendarId
+        + QByteArrayLiteral("/events/") + eventId));
+    request.setRawHeader("Authorization", QByteArrayLiteral("Bearer ") + m_accessToken.toUtf8());
+    auto *reply = m_network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleConflictReply(reply); });
+}
+
+void GoogleMutations::handleConflictReply(QNetworkReply *reply)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QByteArray body = reply->readAll();
+    const QString networkError = reply->errorString();
+    reply->deleteLater();
+    if (status < 200 || status >= 300) {
+        fail(responseError(body, status == 0 ? networkError
+             : QStringLiteral("Google conflict lookup failed (%1)").arg(status)), status);
+        return;
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isObject() || !m_database.rebaseUpdateMutation(m_currentMutationId, document.object())) {
+        fail(document.isObject() ? m_database.lastError()
+                                 : QStringLiteral("Google returned an invalid conflict response"), 412);
+        return;
+    }
+    m_busy = false;
+    emit stateChanged();
     processNext();
 }
 
@@ -175,8 +218,10 @@ void GoogleMutations::fail(const QString &message, int httpStatus)
 {
     m_lastError = message;
     m_busy = false;
+    m_conflict = httpStatus == 412;
     const bool retryable = httpStatus == 0 || httpStatus == 408 || httpStatus == 429 || httpStatus >= 500;
     const QString state = retryable ? QStringLiteral("retrying")
+                        : httpStatus == 412 ? QStringLiteral("conflict")
                         : (httpStatus == 401 || httpStatus == 403) ? QStringLiteral("blocked")
                                                                  : QStringLiteral("failed");
     m_database.setMutationState(m_currentMutationId, state, message);
@@ -198,6 +243,7 @@ void GoogleMutations::complete()
     m_retryPending = false;
     m_currentMutationId.clear();
     m_currentOperation.clear();
+    m_currentProviderCalendarId.clear();
     m_currentGoogleEventId.clear();
     m_currentBaseEtag.clear();
     m_retryAt.clear();
@@ -211,7 +257,8 @@ QJsonDocument GoogleMutations::status() const
                                  .value(QStringLiteral("pendingMutationCount")).toInt();
     return QJsonDocument(QJsonObject {
         { QStringLiteral("state"), m_busy ? QStringLiteral("uploading")
-            : m_retryPending ? QStringLiteral("retrying") : QStringLiteral("idle") },
+            : m_retryPending ? QStringLiteral("retrying")
+            : m_conflict ? QStringLiteral("conflict") : QStringLiteral("idle") },
         { QStringLiteral("lastError"), m_lastError },
         { QStringLiteral("retryAt"), m_retryAt },
         { QStringLiteral("mutationId"), m_currentMutationId },

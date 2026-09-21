@@ -24,6 +24,8 @@ signals:
 private:
     void processNext();
     void handleReply(QNetworkReply *reply);
+    void handleConflictReply(QNetworkReply *reply);
+    void fetchCurrentEvent();
     void fail(const QString &message, int httpStatus);
     void complete();
 
@@ -35,6 +37,7 @@ private:
     QString m_accessToken;
     QString m_currentMutationId;
     QString m_currentOperation;
+    QString m_currentProviderCalendarId;
     QString m_currentGoogleEventId;
     QString m_currentBaseEtag;
     QString m_lastError;
@@ -42,4 +45,5 @@ private:
     bool m_busy = false;
     bool m_retryPending = false;
     bool m_changed = false;
+    bool m_conflict = false;
 };

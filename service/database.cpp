@@ -899,6 +899,135 @@ bool Database::completeCreateMutation(const QString &mutationId, const QJsonObje
     return true;
 }
 
+bool Database::rebaseUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent)
+{
+    const QString remoteEtag = remoteEvent.value(QStringLiteral("etag")).toString();
+    if (remoteEtag.isEmpty()) {
+        setError(QStringLiteral("Event update could not be rebased"),
+                 QStringLiteral("Google returned no ETag"));
+        return false;
+    }
+
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT m.payload_json,e.raw_json,m.calendar_id,m.provider_event_id "
+        "FROM pending_mutations m JOIN events e ON e.calendar_id=m.calendar_id "
+        "AND e.provider_event_id=m.provider_event_id "
+        "WHERE m.id=? AND m.operation='update' LIMIT 1"));
+    query.addBindValue(mutationId);
+    if (!query.exec() || !query.next()) {
+        setError(QStringLiteral("Event update could not be rebased"), QStringLiteral("queued event not found"));
+        return false;
+    }
+
+    QJsonObject local = QJsonDocument::fromJson(query.value(0).toByteArray()).object();
+    const QJsonObject base = QJsonDocument::fromJson(query.value(1).toByteArray()).object();
+    const QString calendarId = query.value(2).toString();
+    const QString providerEventId = query.value(3).toString();
+    QStringList conflicts;
+
+    const auto mergeText = [&](const QString &localKey, const QString &remoteKey,
+                               const QString &label) {
+        const QString baseValue = base.value(remoteKey).toString();
+        const QString localValue = local.value(localKey).toString();
+        const QString remoteValue = remoteEvent.value(remoteKey).toString();
+        const bool localChanged = localValue != baseValue;
+        const bool remoteChanged = remoteValue != baseValue;
+        if (localChanged && remoteChanged && localValue != remoteValue)
+            conflicts.append(label);
+        else if (!localChanged)
+            local.insert(localKey, remoteValue);
+    };
+    mergeText(QStringLiteral("title"), QStringLiteral("summary"), QStringLiteral("title"));
+    mergeText(QStringLiteral("description"), QStringLiteral("description"), QStringLiteral("notes"));
+    mergeText(QStringLiteral("location"), QStringLiteral("location"), QStringLiteral("location"));
+
+    const QJsonObject baseStart = base.value(QStringLiteral("start")).toObject();
+    const QJsonObject baseEnd = base.value(QStringLiteral("end")).toObject();
+    const QJsonObject remoteStart = remoteEvent.value(QStringLiteral("start")).toObject();
+    const QJsonObject remoteEnd = remoteEvent.value(QStringLiteral("end")).toObject();
+    const QString baseZone = baseStart.value(QStringLiteral("timeZone")).toString();
+    const QString remoteZone = remoteStart.value(QStringLiteral("timeZone")).toString(baseZone);
+    const qint64 baseStartMs = googleDateTime(baseStart, baseZone).toMSecsSinceEpoch();
+    const qint64 baseEndMs = googleDateTime(baseEnd, baseZone).toMSecsSinceEpoch();
+    const qint64 remoteStartMs = googleDateTime(remoteStart, remoteZone).toMSecsSinceEpoch();
+    const qint64 remoteEndMs = googleDateTime(remoteEnd, remoteZone).toMSecsSinceEpoch();
+    const qint64 localStartMs = qint64(local.value(QStringLiteral("startMs")).toDouble());
+    const qint64 localEndMs = qint64(local.value(QStringLiteral("endMs")).toDouble());
+    const bool baseAllDay = baseStart.contains(QStringLiteral("date"));
+    const bool remoteAllDay = remoteStart.contains(QStringLiteral("date"));
+    const bool localAllDay = local.value(QStringLiteral("allDay")).toBool();
+
+    const auto mergeNumber = [&](const QString &key, qint64 localValue, qint64 baseValue,
+                                 qint64 remoteValue, const QString &label) {
+        const bool localChanged = localValue != baseValue;
+        const bool remoteChanged = remoteValue != baseValue;
+        if (localChanged && remoteChanged && localValue != remoteValue)
+            conflicts.append(label);
+        else if (!localChanged)
+            local.insert(key, double(remoteValue));
+    };
+    mergeNumber(QStringLiteral("startMs"), localStartMs, baseStartMs, remoteStartMs,
+                QStringLiteral("start time"));
+    mergeNumber(QStringLiteral("endMs"), localEndMs, baseEndMs, remoteEndMs,
+                QStringLiteral("end time"));
+    if (localAllDay != baseAllDay && remoteAllDay != baseAllDay && localAllDay != remoteAllDay)
+        conflicts.append(QStringLiteral("all-day setting"));
+    else if (localAllDay == baseAllDay)
+        local.insert(QStringLiteral("allDay"), remoteAllDay);
+    if (local.value(QStringLiteral("timeZone")).toString(baseZone) == baseZone)
+        local.insert(QStringLiteral("timeZone"), remoteZone);
+
+    if (!conflicts.isEmpty()) {
+        setError(QStringLiteral("Event update conflicts with changes from Google"), conflicts.join(QStringLiteral(", ")));
+        return false;
+    }
+
+    const qint64 mergedStartMs = qint64(local.value(QStringLiteral("startMs")).toDouble());
+    const qint64 mergedEndMs = qint64(local.value(QStringLiteral("endMs")).toDouble());
+    QTimeZone zone(local.value(QStringLiteral("timeZone")).toString().toUtf8());
+    if (!zone.isValid()) zone = QTimeZone::systemTimeZone();
+    if (mergedStartMs <= 0 || mergedEndMs <= mergedStartMs) {
+        setError(QStringLiteral("Event update could not be rebased"), QStringLiteral("Google returned invalid times"));
+        return false;
+    }
+
+    if (!m_database.transaction()) return false;
+    QSqlQuery mutation(m_database);
+    mutation.prepare(QStringLiteral(
+        "UPDATE pending_mutations SET payload_json=?,base_etag=?,state='queued',last_error='',updated_at=? WHERE id=?"));
+    mutation.addBindValue(QString::fromUtf8(QJsonDocument(local).toJson(QJsonDocument::Compact)));
+    mutation.addBindValue(remoteEtag);
+    mutation.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    mutation.addBindValue(mutationId);
+    QSqlQuery event(m_database);
+    event.prepare(QStringLiteral(
+        "UPDATE events SET date_key=?,start_ms=?,end_ms=?,all_day=?,title=?,description=?,location=?,"
+        "time_zone=?,etag=?,provider_updated_at=?,raw_json=? WHERE calendar_id=? AND provider_event_id=?"));
+    event.addBindValue(QDateTime::fromMSecsSinceEpoch(mergedStartMs, zone).date().toString(Qt::ISODate));
+    event.addBindValue(mergedStartMs);
+    event.addBindValue(mergedEndMs);
+    event.addBindValue(local.value(QStringLiteral("allDay")).toBool() ? 1 : 0);
+    event.addBindValue(local.value(QStringLiteral("title")).toString());
+    event.addBindValue(local.value(QStringLiteral("description")).toString());
+    event.addBindValue(local.value(QStringLiteral("location")).toString());
+    event.addBindValue(QString::fromUtf8(zone.id()));
+    event.addBindValue(remoteEtag);
+    event.addBindValue(remoteEvent.value(QStringLiteral("updated")).toString());
+    event.addBindValue(QString::fromUtf8(QJsonDocument(remoteEvent).toJson(QJsonDocument::Compact)));
+    event.addBindValue(calendarId);
+    event.addBindValue(providerEventId);
+    if (!mutation.exec() || mutation.numRowsAffected() != 1
+        || !event.exec() || event.numRowsAffected() != 1 || !m_database.commit()) {
+        setError(QStringLiteral("Event update rebase could not be stored"),
+                 mutation.lastError().text() + event.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
 bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent)
 {
     const QString remoteId = remoteEvent.value(QStringLiteral("id")).toString();

@@ -14,9 +14,11 @@
 #include <QTimer>
 
 namespace {
-void respond(QTcpSocket *socket, const QByteArray &body)
+void respond(QTcpSocket *socket, const QByteArray &body, int status = 200,
+             const QByteArray &reason = QByteArrayLiteral("OK"))
 {
-    socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+    socket->write("HTTP/1.1 " + QByteArray::number(status) + " " + reason
+                  + "\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
                   + QByteArray::number(body.size()) + "\r\n\r\n" + body);
     socket->disconnectFromHost();
 }
@@ -33,6 +35,8 @@ int main(int argc, char **argv)
 
     bool validCreateRequest = false;
     bool validUpdateRequest = false;
+    bool validConflictLookup = false;
+    int updateAttempts = 0;
     QObject::connect(&server, &QTcpServer::newConnection, &app, [&] {
         while (auto *socket = server.nextPendingConnection()) {
             QObject::connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
@@ -53,15 +57,27 @@ int main(int argc, char **argv)
                         && body.value("summary").toString() == QStringLiteral("Upload contract")
                         && body.value("location").toString() == QStringLiteral("Before upload")
                         && body.value("start").toObject().value("timeZone").toString() == QStringLiteral("America/Phoenix");
-                    respond(socket, R"({"id":"google-created-id","iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
+                    respond(socket, R"({"id":"google-created-id","summary":"Upload contract","description":"","location":"Before upload","start":{"dateTime":"2026-09-21T09:00:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:00:00.000-07:00","timeZone":"America/Phoenix"},"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-1","updated":"2026-09-21T03:00:00Z"})");
+                } else if (request.startsWith("GET /calendar/v3/calendars/primary%40example.com/events/google-created-id")) {
+                    validConflictLookup = request.contains("Authorization: Bearer test-write-token");
+                    respond(socket, R"({"id":"google-created-id","summary":"Upload contract","description":"Changed elsewhere","location":"Before upload","start":{"dateTime":"2026-09-21T09:00:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:00:00.000-07:00","timeZone":"America/Phoenix"},"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/created","etag":"etag-remote","updated":"2026-09-21T03:30:00Z"})");
                 } else {
-                    validUpdateRequest = request.startsWith("PATCH /calendar/v3/calendars/primary%40example.com/events/google-created-id")
+                    ++updateAttempts;
+                    const bool common = request.startsWith("PATCH /calendar/v3/calendars/primary%40example.com/events/google-created-id")
                         && request.contains("Authorization: Bearer test-write-token")
-                        && request.toLower().contains("if-match: etag-1")
                         && !body.contains("id")
                         && body.value("summary").toString() == QStringLiteral("Updated contract")
                         && body.value("location").toString() == QStringLiteral("Phoenix");
-                    respond(socket, R"({"id":"google-created-id","iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/updated","etag":"etag-2","updated":"2026-09-21T04:00:00Z"})");
+                    if (updateAttempts == 1) {
+                        validUpdateRequest = common && request.toLower().contains("if-match: etag-1");
+                        respond(socket, R"({"error":{"message":"Precondition failed"}})", 412,
+                                QByteArrayLiteral("Precondition Failed"));
+                    } else {
+                        validUpdateRequest = validUpdateRequest && common
+                            && request.toLower().contains("if-match: etag-remote")
+                            && body.value("description").toString() == QStringLiteral("Changed elsewhere");
+                        respond(socket, R"({"id":"google-created-id","summary":"Updated contract","description":"Changed elsewhere","location":"Phoenix","start":{"dateTime":"2026-09-21T09:30:00.000-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-21T10:30:00.000-07:00","timeZone":"America/Phoenix"},"iCalUID":"created@example.com","htmlLink":"https://calendar.google.com/updated","etag":"etag-2","updated":"2026-09-21T04:00:00Z"})");
+                    }
                 }
             });
         }
@@ -117,11 +133,31 @@ int main(int argc, char **argv)
     if (!mutations.start(accountId, QStringLiteral("test-write-token"))) return 9;
     loop.exec();
     const QJsonArray updatedEvents = database.eventsForRange("2026-09-21", "2026-09-21").array();
-    if (!completed || !validUpdateRequest || !database.nextPendingMutation(accountId).object().isEmpty()
+    if (!completed || !validUpdateRequest || !validConflictLookup || updateAttempts != 2
+        || !database.nextPendingMutation(accountId).object().isEmpty()
         || updatedEvents.size() != 1
         || updatedEvents.at(0).toObject().value("title").toString() != QStringLiteral("Updated contract")
+        || updatedEvents.at(0).toObject().value("description").toString() != QStringLiteral("Changed elsewhere")
         || updatedEvents.at(0).toObject().value("location").toString() != QStringLiteral("Phoenix")
         || updatedEvents.at(0).toObject().value("etag").toString() != QStringLiteral("etag-2"))
         return 10;
+
+    if (!database.updatePendingEvent(QJsonObject {
+            { "id", "google-created-id" }, { "calendarId", calendarId },
+            { "title", "Local collision" }, { "location", "Phoenix" },
+            { "description", "Changed elsewhere" }, { "startMs", double(start + 1800000) },
+            { "endMs", double(start + 5400000) }, { "timeZone", "America/Phoenix" }
+        })) return 11;
+    const QString conflictingMutationId = database.nextPendingMutation(accountId).object()
+                                              .value("id").toString();
+    if (database.rebaseUpdateMutation(conflictingMutationId, QJsonObject {
+            { "id", "google-created-id" }, { "summary", "Remote collision" },
+            { "description", "Changed elsewhere" }, { "location", "Phoenix" },
+            { "start", QJsonObject { { "dateTime", "2026-09-21T09:30:00.000-07:00" },
+                                      { "timeZone", "America/Phoenix" } } },
+            { "end", QJsonObject { { "dateTime", "2026-09-21T10:30:00.000-07:00" },
+                                    { "timeZone", "America/Phoenix" } } },
+            { "etag", "etag-3" }, { "updated", "2026-09-21T04:30:00Z" }
+        }) || !database.lastError().contains(QStringLiteral("title"))) return 12;
     return 0;
 }

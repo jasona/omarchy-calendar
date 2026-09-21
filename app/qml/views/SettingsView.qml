@@ -22,6 +22,8 @@ Item {
             return "Uploading " + mutationStatus.pendingCount + " queued change" + (mutationStatus.pendingCount === 1 ? "" : "s")
         if (mutationStatus.state === "retrying")
             return "A queued change will retry automatically"
+        if (mutationStatus.state === "conflict")
+            return "A calendar change needs review before it can upload"
         if (syncStatus.state === "syncing") {
             var progress = syncStatus.calendarsTotal > 0
                     ? " · " + syncStatus.calendarsCompleted + " of " + syncStatus.calendarsTotal + " calendars"
