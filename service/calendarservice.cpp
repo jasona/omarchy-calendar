@@ -20,6 +20,8 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
     , m_googleMutations(googleMutations)
     , m_feedPath(std::move(feedPath))
 {
+    if (!m_database.finalizeUndoableDeletes())
+        qWarning().noquote() << m_database.lastError();
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, &CalendarService::feedChanged);
     connect(&m_googleAuth, &GoogleAuth::authorizationRequired,
             this, &CalendarService::AuthorizationRequired);
@@ -180,6 +182,35 @@ bool CalendarService::UpdateEvent(const QString &eventJson)
     emit EventsChanged();
     if (m_googleAuth.writeAccessAvailable())
         m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+    return true;
+}
+
+QString CalendarService::DeleteEvent(const QString &calendarId, const QString &eventId)
+{
+    const QString mutationId = m_database.deletePendingEvent(calendarId, eventId);
+    if (mutationId.isEmpty()) return {};
+    if (!m_database.exportCompatibilityFeed(m_feedPath))
+        qWarning().noquote() << m_database.lastError();
+    ensureWatching();
+    emit EventsChanged();
+    emit ProviderStatusChanged();
+    QTimer::singleShot(6000, this, [this, mutationId] {
+        if (!m_database.finalizePendingDelete(mutationId)) return;
+        emit ProviderStatusChanged();
+        if (m_googleAuth.writeAccessAvailable())
+            m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+    });
+    return mutationId;
+}
+
+bool CalendarService::UndoDelete(const QString &mutationId)
+{
+    if (!m_database.undoPendingDelete(mutationId)) return false;
+    if (!m_database.exportCompatibilityFeed(m_feedPath))
+        qWarning().noquote() << m_database.lastError();
+    ensureWatching();
+    emit EventsChanged();
+    emit ProviderStatusChanged();
     return true;
 }
 

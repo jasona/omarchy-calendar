@@ -114,19 +114,26 @@ void GoogleMutations::processNext()
         mutation.value(QStringLiteral("providerCalendarId")).toString());
     QByteArray endpoint = m_apiBaseUrl.toUtf8() + QByteArrayLiteral("/calendar/v3/calendars/")
         + calendarId + QByteArrayLiteral("/events");
-    if (m_currentOperation == QStringLiteral("update"))
+    if (m_currentOperation == QStringLiteral("update")
+        || m_currentOperation == QStringLiteral("delete"))
         endpoint += QByteArrayLiteral("/") + QUrl::toPercentEncoding(m_currentGoogleEventId);
     QNetworkRequest request(QUrl::fromEncoded(endpoint));
     request.setRawHeader("Authorization", QByteArrayLiteral("Bearer ") + m_accessToken.toUtf8());
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    if (m_currentOperation == QStringLiteral("update") && !m_currentBaseEtag.isEmpty())
+    if ((m_currentOperation == QStringLiteral("update")
+         || m_currentOperation == QStringLiteral("delete")) && !m_currentBaseEtag.isEmpty())
         request.setRawHeader("If-Match", m_currentBaseEtag.toUtf8());
-    const QByteArray body = QJsonDocument(googleEventBody(
-        mutation.value(QStringLiteral("payload")).toObject(),
-        m_currentOperation == QStringLiteral("create"))).toJson(QJsonDocument::Compact);
-    QNetworkReply *reply = m_currentOperation == QStringLiteral("update")
-        ? m_network->sendCustomRequest(request, QByteArrayLiteral("PATCH"), body)
-        : m_network->post(request, body);
+    QNetworkReply *reply = nullptr;
+    if (m_currentOperation == QStringLiteral("delete")) {
+        reply = m_network->deleteResource(request);
+    } else {
+        const QByteArray body = QJsonDocument(googleEventBody(
+            mutation.value(QStringLiteral("payload")).toObject(),
+            m_currentOperation == QStringLiteral("create"))).toJson(QJsonDocument::Compact);
+        reply = m_currentOperation == QStringLiteral("update")
+            ? m_network->sendCustomRequest(request, QByteArrayLiteral("PATCH"), body)
+            : m_network->post(request, body);
+    }
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleReply(reply); });
 }
 
@@ -153,12 +160,57 @@ void GoogleMutations::handleReply(QNetworkReply *reply)
         fetchCurrentEvent();
         return;
     }
+    if (m_currentOperation == QStringLiteral("delete") && status == 404) {
+        if (!m_database.completeDeleteMutation(m_currentMutationId)) {
+            fail(m_database.lastError(), 400);
+            return;
+        }
+        m_lastError.clear();
+        m_changed = true;
+        m_currentMutationId.clear();
+        m_currentOperation.clear();
+        m_currentProviderCalendarId.clear();
+        m_currentGoogleEventId.clear();
+        m_currentBaseEtag.clear();
+        processNext();
+        return;
+    }
     if (status < 200 || status >= 300) {
-        fail(responseError(body, status == 0 ? networkError
+        const QString message = responseError(body, status == 0 ? networkError
              : QStringLiteral("Google event %1 failed (%2)")
                    .arg(m_currentOperation == QStringLiteral("update") ? QStringLiteral("update")
-                                                                        : QStringLiteral("creation"))
-                   .arg(status)), status);
+                        : m_currentOperation == QStringLiteral("delete") ? QStringLiteral("deletion")
+                                                                         : QStringLiteral("creation"))
+                   .arg(status));
+        const bool permanentDeleteFailure = m_currentOperation == QStringLiteral("delete")
+            && status >= 400 && status < 500 && status != 401 && status != 403
+            && status != 408 && status != 429;
+        if (permanentDeleteFailure) {
+            m_database.setMutationState(m_currentMutationId, QStringLiteral("undoable"), message);
+            if (m_database.undoPendingDelete(m_currentMutationId)) {
+                m_lastError = message;
+                m_conflict = status == 412;
+                m_changed = true;
+                complete();
+                return;
+            }
+        }
+        fail(message, status);
+        return;
+    }
+    if (m_currentOperation == QStringLiteral("delete")) {
+        if (!m_database.completeDeleteMutation(m_currentMutationId)) {
+            fail(m_database.lastError(), 400);
+            return;
+        }
+        m_lastError.clear();
+        m_changed = true;
+        m_currentMutationId.clear();
+        m_currentOperation.clear();
+        m_currentProviderCalendarId.clear();
+        m_currentGoogleEventId.clear();
+        m_currentBaseEtag.clear();
+        processNext();
         return;
     }
     const QJsonDocument document = QJsonDocument::fromJson(body);

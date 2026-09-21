@@ -336,6 +336,21 @@ bool EventStore::updateEvent(const QVariantMap &event) const
     return reply.isValid() && reply.value();
 }
 
+QString EventStore::deleteEvent(const QString &calendarId, const QString &eventId) const
+{
+    if (!serviceBacked()) return {};
+    const QDBusReply<QString> reply = m_service->call(
+        QStringLiteral("DeleteEvent"), calendarId, eventId);
+    return reply.isValid() ? reply.value() : QString();
+}
+
+bool EventStore::undoDelete(const QString &mutationId) const
+{
+    if (!serviceBacked()) return false;
+    const QDBusReply<bool> reply = m_service->call(QStringLiteral("UndoDelete"), mutationId);
+    return reply.isValid() && reply.value();
+}
+
 bool EventStore::syncNow() const
 {
     if (!serviceBacked())

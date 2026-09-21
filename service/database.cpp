@@ -809,6 +809,229 @@ bool Database::updatePendingEvent(const QJsonObject &event)
     return true;
 }
 
+QString Database::deletePendingEvent(const QString &calendarId, const QString &eventId)
+{
+    if (calendarId.isEmpty() || eventId.isEmpty()) {
+        setError(QStringLiteral("Event could not be deleted"), QStringLiteral("event identity is required"));
+        return {};
+    }
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT c.account_id,c.access_role,e.source,e.etag,e.date_key,e.start_ms,e.end_ms,e.all_day,"
+        "e.title,e.description,e.location,e.event_url,e.provider_uid,e.time_zone,e.status,e.transparency,"
+        "e.provider_updated_at,e.raw_json FROM events e JOIN calendars c ON c.id=e.calendar_id "
+        "WHERE e.calendar_id=? AND e.provider_event_id=? ORDER BY e.date_key"));
+    query.addBindValue(calendarId);
+    query.addBindValue(eventId);
+    if (!query.exec()) {
+        setError(QStringLiteral("Event could not be deleted"), query.lastError().text());
+        return {};
+    }
+    QJsonArray rows;
+    QString accountId;
+    QString accessRole;
+    QString source;
+    QString etag;
+    while (query.next()) {
+        accountId = query.value(0).toString();
+        accessRole = query.value(1).toString();
+        source = query.value(2).toString();
+        etag = query.value(3).toString();
+        rows.append(QJsonObject {
+            { QStringLiteral("dateKey"), query.value(4).toString() },
+            { QStringLiteral("startMs"), query.value(5).toDouble() },
+            { QStringLiteral("endMs"), query.value(6).toDouble() },
+            { QStringLiteral("allDay"), query.value(7).toBool() },
+            { QStringLiteral("title"), query.value(8).toString() },
+            { QStringLiteral("description"), query.value(9).toString() },
+            { QStringLiteral("location"), query.value(10).toString() },
+            { QStringLiteral("eventUrl"), query.value(11).toString() },
+            { QStringLiteral("providerUid"), query.value(12).toString() },
+            { QStringLiteral("timeZone"), query.value(13).toString() },
+            { QStringLiteral("status"), query.value(14).toString() },
+            { QStringLiteral("transparency"), query.value(15).toString() },
+            { QStringLiteral("providerUpdatedAt"), query.value(16).toString() },
+            { QStringLiteral("rawJson"), query.value(17).toString() },
+            { QStringLiteral("etag"), etag },
+            { QStringLiteral("source"), source }
+        });
+    }
+    if (rows.isEmpty() || (accessRole != QStringLiteral("owner") && accessRole != QStringLiteral("writer"))) {
+        setError(QStringLiteral("Event could not be deleted"),
+                 rows.isEmpty() ? QStringLiteral("event not found") : QStringLiteral("calendar is read-only"));
+        return {};
+    }
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    QString mutationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QJsonObject payload { { QStringLiteral("rows"), rows } };
+    if (!m_database.transaction()) return {};
+    QSqlQuery mutation(m_database);
+    if (source == QStringLiteral("local-pending")) {
+        mutation.prepare(QStringLiteral(
+            "SELECT id,payload_json,state FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
+            "AND operation='create' LIMIT 1"));
+        mutation.addBindValue(calendarId);
+        mutation.addBindValue(eventId);
+        if (!mutation.exec() || !mutation.next()) {
+            setError(QStringLiteral("Local event deletion could not be queued"), QStringLiteral("create mutation not found"));
+            m_database.rollback();
+            return {};
+        }
+        if (mutation.value(2).toString() == QStringLiteral("uploading")) {
+            setError(QStringLiteral("Local event deletion is waiting for creation to finish"), {});
+            m_database.rollback();
+            return {};
+        }
+        mutationId = mutation.value(0).toString();
+        payload.insert(QStringLiteral("createPayload"),
+                       QJsonDocument::fromJson(mutation.value(1).toByteArray()).object());
+        mutation.prepare(QStringLiteral(
+            "UPDATE pending_mutations SET operation='cancel-create',payload_json=?,state='undoable',"
+            "last_error='',updated_at=? WHERE id=?"));
+        mutation.addBindValue(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+        mutation.addBindValue(now);
+        mutation.addBindValue(mutationId);
+    } else {
+        mutation.prepare(QStringLiteral(
+            "INSERT INTO pending_mutations(id,account_id,calendar_id,provider_event_id,operation,payload_json,"
+            "base_etag,state,created_at,updated_at) VALUES(?,?,?,?, 'delete',?,?,'undoable',?,?)"));
+        mutation.addBindValue(mutationId);
+        mutation.addBindValue(accountId);
+        mutation.addBindValue(calendarId);
+        mutation.addBindValue(eventId);
+        mutation.addBindValue(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+        mutation.addBindValue(etag);
+        mutation.addBindValue(now);
+        mutation.addBindValue(now);
+    }
+    QSqlQuery remove(m_database);
+    remove.prepare(QStringLiteral("DELETE FROM events WHERE calendar_id=? AND provider_event_id=?"));
+    remove.addBindValue(calendarId);
+    remove.addBindValue(eventId);
+    if (!mutation.exec() || mutation.numRowsAffected() != 1
+        || !remove.exec() || remove.numRowsAffected() < 1 || !m_database.commit()) {
+        setError(QStringLiteral("Event deletion could not be queued"),
+                 mutation.lastError().text() + remove.lastError().text());
+        m_database.rollback();
+        return {};
+    }
+    m_lastError.clear();
+    return mutationId;
+}
+
+bool Database::undoPendingDelete(const QString &mutationId)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT operation,payload_json,calendar_id,provider_event_id FROM pending_mutations "
+        "WHERE id=? AND state='undoable' AND operation IN ('delete','cancel-create')"));
+    query.addBindValue(mutationId);
+    if (!query.exec() || !query.next()) {
+        setError(QStringLiteral("Delete could not be undone"), QStringLiteral("undo window has closed"));
+        return false;
+    }
+    const QString operation = query.value(0).toString();
+    const QJsonObject payload = QJsonDocument::fromJson(query.value(1).toByteArray()).object();
+    const QString calendarId = query.value(2).toString();
+    const QString eventId = query.value(3).toString();
+    if (!m_database.transaction()) return false;
+    QSqlQuery insert(m_database);
+    insert.prepare(QStringLiteral(
+        "INSERT INTO events(provider_event_id,date_key,calendar_id,start_ms,end_ms,all_day,title,description,"
+        "location,event_url,provider_uid,time_zone,status,transparency,etag,provider_updated_at,raw_json,source) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+    for (const auto &value : payload.value(QStringLiteral("rows")).toArray()) {
+        const QJsonObject row = value.toObject();
+        int column = 0;
+        insert.bindValue(column++, eventId);
+        insert.bindValue(column++, row.value(QStringLiteral("dateKey")).toString());
+        insert.bindValue(column++, calendarId);
+        insert.bindValue(column++, qint64(row.value(QStringLiteral("startMs")).toDouble()));
+        insert.bindValue(column++, qint64(row.value(QStringLiteral("endMs")).toDouble()));
+        insert.bindValue(column++, row.value(QStringLiteral("allDay")).toBool() ? 1 : 0);
+        insert.bindValue(column++, row.value(QStringLiteral("title")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("description")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("location")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("eventUrl")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("providerUid")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("timeZone")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("status")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("transparency")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("etag")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("providerUpdatedAt")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("rawJson")).toString());
+        insert.bindValue(column++, row.value(QStringLiteral("source")).toString());
+        if (!insert.exec()) {
+            setError(QStringLiteral("Deleted event could not be restored"), insert.lastError().text());
+            m_database.rollback();
+            return false;
+        }
+    }
+    QSqlQuery mutation(m_database);
+    if (operation == QStringLiteral("cancel-create")) {
+        mutation.prepare(QStringLiteral(
+            "UPDATE pending_mutations SET operation='create',payload_json=?,state='queued',last_error='',updated_at=? WHERE id=?"));
+        mutation.addBindValue(QString::fromUtf8(QJsonDocument(
+            payload.value(QStringLiteral("createPayload")).toObject()).toJson(QJsonDocument::Compact)));
+        mutation.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+        mutation.addBindValue(mutationId);
+    } else {
+        mutation.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
+        mutation.addBindValue(mutationId);
+    }
+    if (!mutation.exec() || mutation.numRowsAffected() != 1 || !m_database.commit()) {
+        setError(QStringLiteral("Delete undo could not be committed"), mutation.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::finalizePendingDelete(const QString &mutationId)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT operation FROM pending_mutations WHERE id=? AND state='undoable'"));
+    query.addBindValue(mutationId);
+    if (!query.exec() || !query.next()) return false;
+    QSqlQuery finalize(m_database);
+    if (query.value(0).toString() == QStringLiteral("cancel-create"))
+        finalize.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
+    else
+        finalize.prepare(QStringLiteral("UPDATE pending_mutations SET state='queued',updated_at=? WHERE id=?"));
+    if (query.value(0).toString() != QStringLiteral("cancel-create"))
+        finalize.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    finalize.addBindValue(mutationId);
+    if (!finalize.exec() || finalize.numRowsAffected() != 1) {
+        setError(QStringLiteral("Pending delete could not be finalized"), finalize.lastError().text());
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::finalizeUndoableDeletes()
+{
+    if (!m_database.transaction()) return false;
+    QSqlQuery cancel(m_database);
+    QSqlQuery queue(m_database);
+    const bool ok = cancel.exec(QStringLiteral(
+        "DELETE FROM pending_mutations WHERE state='undoable' AND operation='cancel-create'"))
+        && queue.exec(QStringLiteral(
+            "UPDATE pending_mutations SET state='queued',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+            "WHERE state='undoable' AND operation='delete'"));
+    if (!ok || !m_database.commit()) {
+        setError(QStringLiteral("Pending deletes could not be finalized"),
+                 cancel.lastError().text() + queue.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
 QJsonDocument Database::nextPendingMutation(const QString &accountId) const
 {
     QSqlQuery query(m_database);
@@ -1047,6 +1270,13 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     }
     const QString calendarId = mutation.value(0).toString();
     const QString providerEventId = mutation.value(1).toString();
+    QSqlQuery pendingDelete(m_database);
+    pendingDelete.prepare(QStringLiteral(
+        "SELECT 1 FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
+        "AND operation='delete' LIMIT 1"));
+    pendingDelete.addBindValue(calendarId);
+    pendingDelete.addBindValue(providerEventId);
+    const bool deleting = pendingDelete.exec() && pendingDelete.next();
     QSqlQuery update(m_database);
     update.prepare(QStringLiteral(
         "UPDATE events SET event_url=?,provider_uid=?,etag=?,provider_updated_at=?,raw_json=?,source='google' "
@@ -1061,7 +1291,7 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     QSqlQuery advance(m_database);
     advance.prepare(QStringLiteral(
         "UPDATE pending_mutations SET base_etag=?,updated_at=? WHERE calendar_id=? "
-        "AND provider_event_id=? AND operation='update' AND id!=?"));
+        "AND provider_event_id=? AND operation IN ('update','delete') AND id!=?"));
     advance.addBindValue(remoteEvent.value(QStringLiteral("etag")).toString(QStringLiteral("")));
     advance.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
     advance.addBindValue(calendarId);
@@ -1070,11 +1300,26 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     QSqlQuery remove(m_database);
     remove.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
     remove.addBindValue(mutationId);
-    if (!update.exec() || update.numRowsAffected() < 1 || !advance.exec()
+    if (!update.exec() || (update.numRowsAffected() < 1 && !deleting) || !advance.exec()
         || !remove.exec() || !m_database.commit()) {
         setError(QStringLiteral("Google event update could not be reconciled"),
                  update.lastError().text() + remove.lastError().text());
         m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::completeDeleteMutation(const QString &mutationId)
+{
+    QSqlQuery remove(m_database);
+    remove.prepare(QStringLiteral(
+        "DELETE FROM pending_mutations WHERE id=? AND operation='delete'"));
+    remove.addBindValue(mutationId);
+    if (!remove.exec() || remove.numRowsAffected() != 1) {
+        setError(QStringLiteral("Google event deletion could not be reconciled"),
+                 remove.lastError().text());
         return false;
     }
     m_lastError.clear();
@@ -1232,6 +1477,10 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
 
     QSqlQuery remove(m_database);
     remove.prepare(QStringLiteral("DELETE FROM events WHERE calendar_id=? AND provider_event_id=?"));
+    QSqlQuery pendingDelete(m_database);
+    pendingDelete.prepare(QStringLiteral(
+        "SELECT 1 FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
+        "AND operation='delete' LIMIT 1"));
     QSqlQuery insert(m_database);
     insert.prepare(QStringLiteral(
         "INSERT INTO events(provider_event_id, date_key, calendar_id, start_ms, end_ms, all_day, "
@@ -1253,6 +1502,16 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
             m_database.rollback();
             return false;
         }
+        pendingDelete.bindValue(0, calendarId);
+        pendingDelete.bindValue(1, providerEventId);
+        if (!pendingDelete.exec()) {
+            setError(QStringLiteral("Pending event deletion could not be checked"),
+                     pendingDelete.lastError().text());
+            m_database.rollback();
+            return false;
+        }
+        if (pendingDelete.next())
+            continue;
         if (item.value(QStringLiteral("status")).toString() == QStringLiteral("cancelled"))
             continue;
 

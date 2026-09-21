@@ -39,6 +39,8 @@ dbus-run-session -- bash -c '
   disconnect="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.DisconnectGoogle)"
   select_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.SetCalendarSelected missing true)"
   update_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.UpdateEvent \"{}\")"
+  delete_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.DeleteEvent missing missing)"
+  undo_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.UndoDelete missing)"
 
   [[ "$status" == *"\"eventCount\":3"* ]]
   [[ "$status" == *"\"schemaVersion\":4"* ]]
@@ -57,6 +59,8 @@ dbus-run-session -- bash -c '
   [[ "$disconnect" == "(false,)" ]]
   [[ "$select_missing" == "(false,)" ]]
   [[ "$update_missing" == "(false,)" ]]
+  [[ "$delete_missing" == \(*,\) && ${#delete_missing} -eq 5 ]]
+  [[ "$undo_missing" == "(false,)" ]]
 '
 
 echo "dbus contract: ok"

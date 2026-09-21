@@ -26,6 +26,8 @@ ApplicationWindow {
     property var calendarList: []
     property var accountList: []
     property var providerStatus: ({})
+    property string pendingDeleteToken: ""
+    property string pendingDeleteTitle: ""
     property string currentView: "week"
     property var hiddenCalendarIds: preferences.hiddenCalendarIds
 
@@ -138,6 +140,36 @@ ApplicationWindow {
             eventEditor.openForEvent(selectedEvent)
     }
 
+    function eventDeletable(eventData) {
+        if (!eventData || !eventData.id || eventData.source === "compat-json"
+                || pendingDeleteToken.length > 0)
+            return false
+        return calendarList.some(function(calendar) {
+            return calendar.id === eventData.calendarId
+                    && (calendar.accessRole === "owner" || calendar.accessRole === "writer")
+        })
+    }
+
+    function deleteSelectedEvent() {
+        if (!eventDeletable(selectedEvent)) return
+        let title = selectedEvent.title || "Event"
+        let token = eventStore.deleteEvent(selectedEvent.calendarId, selectedEvent.id)
+        if (!token) return
+        pendingDeleteTitle = title
+        pendingDeleteToken = token
+        selectedEvent = ({})
+        deleteUndoTimer.restart()
+        refreshFeedMetadata()
+    }
+
+    function undoLastDelete() {
+        if (!pendingDeleteToken || !eventStore.undoDelete(pendingDeleteToken)) return
+        deleteUndoTimer.stop()
+        pendingDeleteToken = ""
+        pendingDeleteTitle = ""
+        refreshFeedMetadata()
+    }
+
     function calendarVisible(calendarId) {
         return hiddenCalendarIds.indexOf(calendarId) < 0
     }
@@ -173,6 +205,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+,"; onActivated: window.currentView = "settings" }
     Shortcut { sequence: "N"; enabled: !eventEditor.opened; onActivated: window.openEventEditor() }
     Shortcut { sequence: "E"; enabled: !eventEditor.opened && window.eventEditable(window.selectedEvent); onActivated: window.editSelectedEvent() }
+    Shortcut { sequence: "Delete"; enabled: !eventEditor.opened && window.eventDeletable(window.selectedEvent); onActivated: window.deleteSelectedEvent() }
     Shortcut { sequence: "Escape"; enabled: window.currentView === "search" || window.currentView === "settings"; onActivated: window.currentView = "week" }
 
     Rectangle {
@@ -476,8 +509,57 @@ ApplicationWindow {
                             enabled: !!window.selectedEvent.eventUrl
                             onClicked: Qt.openUrlExternally(window.selectedEvent.eventUrl)
                         }
+                        CalendarButton {
+                            width: parent.width
+                            text: "Delete event"
+                            selected: true
+                            accentColor: theme.red
+                            enabled: window.eventDeletable(window.selectedEvent)
+                            onClicked: window.deleteSelectedEvent()
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    Timer {
+        id: deleteUndoTimer
+        interval: 6000
+        onTriggered: {
+            window.pendingDeleteToken = ""
+            window.pendingDeleteTitle = ""
+        }
+    }
+
+    Rectangle {
+        visible: window.pendingDeleteToken.length > 0
+        z: 100
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 34
+        width: Math.min(460, parent.width - 48)
+        height: 58
+        radius: 14
+        color: theme.backgroundDeep
+        border.width: 1
+        border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+
+        RowLayout {
+            anchors { fill: parent; leftMargin: 18; rightMargin: 10 }
+            spacing: 12
+            Text {
+                Layout.fillWidth: true
+                text: window.pendingDeleteTitle + " deleted"
+                color: theme.foreground
+                font.pixelSize: theme.baseFontSize
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
+            CalendarButton {
+                text: "Undo"
+                selected: true
+                onClicked: window.undoLastDelete()
             }
         }
     }

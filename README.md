@@ -56,6 +56,13 @@ current version and performs a three-way merge. Remote-only changes are kept
 and the edit retries with the new ETag; overlapping field changes stop safely
 and appear as a named conflict in Settings.
 
+Choose **Delete event** or press `Delete` to remove a writable event
+immediately. A themed notification offers Undo for six seconds; Google does not
+receive the deletion until that window closes. The durable delete queue treats
+an already-absent remote event as success and restores the local event after a
+permanent provider rejection. Deleting a new event before its first upload
+cancels that creation without sending unnecessary provider traffic.
+
 Open Settings with `Ctrl+,`. Google account onboarding uses Qt NetworkAuth's
 desktop loopback flow and stores refresh tokens in Secret Service. Development
 OAuth client setup is documented in
@@ -95,4 +102,5 @@ cd ..
 ./tests/test-google-auth-contract.sh build-service/omarchy-calendar-service
 ./tests/test-google-sync-retry.sh
 ./tests/test-google-mutation-upload.sh
+./tests/test-google-delete-undo.sh
 ```

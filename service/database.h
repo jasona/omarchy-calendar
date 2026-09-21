@@ -33,12 +33,17 @@ public:
     bool setCalendarSelected(const QString &calendarId, bool selected);
     QString createPendingEvent(const QJsonObject &event);
     bool updatePendingEvent(const QJsonObject &event);
+    QString deletePendingEvent(const QString &calendarId, const QString &eventId);
+    bool undoPendingDelete(const QString &mutationId);
+    bool finalizePendingDelete(const QString &mutationId);
+    bool finalizeUndoableDeletes();
     QJsonDocument nextPendingMutation(const QString &accountId) const;
     bool setMutationState(const QString &mutationId, const QString &state,
                           const QString &error = {}, bool incrementAttempt = false);
     bool completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool rebaseUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool completeUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
+    bool completeDeleteMutation(const QString &mutationId);
     bool removeAccount(const QString &id);
     bool setSyncCursor(const QString &accountId, const QString &calendarId,
                        const QString &cursor);
