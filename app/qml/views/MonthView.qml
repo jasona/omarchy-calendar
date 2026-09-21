@@ -7,8 +7,11 @@ Item {
     property var hiddenCalendarIds: []
     property var gridStart: startOfGrid(monthDate)
     property int cursorIndex: initialCursorIndex()
+    property var selectedEvent: ({})
+    property var canAdjustEvent: function(eventData) { return false }
     signal eventSelected(var eventData)
     signal dayActivated(var dayDate)
+    signal eventAdjusted(var eventData, int minuteDelta, int dayDelta, int resizeDelta)
 
     function addDays(date, amount) {
         let result = new Date(date)
@@ -60,10 +63,26 @@ Item {
         refreshEvents()
     }
     onVisibleChanged: if (visible) forceActiveFocus()
-    Keys.onLeftPressed: moveCursor(-1)
-    Keys.onRightPressed: moveCursor(1)
-    Keys.onUpPressed: moveCursor(-7)
-    Keys.onDownPressed: moveCursor(7)
+    Keys.onLeftPressed: function(event) {
+        if ((event.modifiers & Qt.AltModifier) && canAdjustEvent(selectedEvent))
+            eventAdjusted(selectedEvent, 0, -1, 0)
+        else moveCursor(-1)
+    }
+    Keys.onRightPressed: function(event) {
+        if ((event.modifiers & Qt.AltModifier) && canAdjustEvent(selectedEvent))
+            eventAdjusted(selectedEvent, 0, 1, 0)
+        else moveCursor(1)
+    }
+    Keys.onUpPressed: function(event) {
+        if ((event.modifiers & Qt.AltModifier) && canAdjustEvent(selectedEvent))
+            eventAdjusted(selectedEvent, 0, -7, 0)
+        else moveCursor(-7)
+    }
+    Keys.onDownPressed: function(event) {
+        if ((event.modifiers & Qt.AltModifier) && canAdjustEvent(selectedEvent))
+            eventAdjusted(selectedEvent, 0, 7, 0)
+        else moveCursor(7)
+    }
     Keys.onReturnPressed: dayActivated(addDays(gridStart, cursorIndex))
     Keys.onEnterPressed: dayActivated(addDays(gridStart, cursorIndex))
     Keys.onPressed: function(event) {
@@ -187,11 +206,36 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
+                                    preventStealing: pressed && root.canAdjustEvent(modelData)
+                                    property point pressInGrid: Qt.point(0, 0)
+                                    property bool dragged: false
+                                    onPressed: function(mouse) {
+                                        pressInGrid = mapToItem(monthGrid, mouse.x, mouse.y)
+                                        dragged = false
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (!pressed || !root.canAdjustEvent(modelData)) return
+                                        let point = mapToItem(monthGrid, mouse.x, mouse.y)
+                                        dragged = Math.abs(point.x - pressInGrid.x) > 5
+                                               || Math.abs(point.y - pressInGrid.y) > 5
+                                    }
                                     onClicked: {
                                         root.cursorIndex = dayCell.index
+                                        root.selectedEvent = modelData
                                         root.forceActiveFocus()
                                         root.eventSelected(modelData)
                                     }
+                                    onReleased: function(mouse) {
+                                        if (!dragged || !root.canAdjustEvent(modelData)) return
+                                        let point = mapToItem(monthGrid, mouse.x, mouse.y)
+                                        let column = Math.max(0, Math.min(6, Math.floor(point.x / (monthGrid.width / 7))))
+                                        let row = Math.max(0, Math.min(5, Math.floor(point.y / (monthGrid.height / 6))))
+                                        let target = row * 7 + column
+                                        let days = target - dayCell.index
+                                        if (days) root.eventAdjusted(modelData, 0, days, 0)
+                                        dragged = false
+                                    }
+                                    onCanceled: dragged = false
                                 }
                             }
                         }

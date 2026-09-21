@@ -56,6 +56,13 @@ current version and performs a three-way merge. Remote-only changes are kept
 and the edit retries with the new ETag; overlapping field changes stop safely
 and appear as a named conflict in Settings.
 
+Timed events can be dragged in Day and Week to move them in 15-minute steps;
+Week also moves across day columns, and Month events can be dragged between
+date cells. Drag the lower edge of a timed card to resize it. For keyboard
+control, use `Alt+↑/↓` to move by 15 minutes, `Alt+←/→` to move by a day, and
+`Alt+Shift+↑/↓` to resize. Rapid adjustments are coalesced locally before the
+latest ETag-protected update is sent to Google.
+
 Choose **Delete event** or press `Delete` to remove a writable event
 immediately. A themed notification offers Undo for six seconds; Google does not
 receive the deletion until that window closes. The durable delete queue treats
@@ -103,4 +110,5 @@ cd ..
 ./tests/test-google-sync-retry.sh
 ./tests/test-google-mutation-upload.sh
 ./tests/test-google-delete-undo.sh
+./tests/test-event-adjustment.sh
 ```

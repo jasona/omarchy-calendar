@@ -12,8 +12,10 @@ Item {
     property var visibleWeekEvents: weekEvents.filter(function(item) { return root.calendarVisible(item) })
     property int cursorDay: initialCursorDay()
     property int eventCursor: -1
+    property var canAdjustEvent: function(eventData) { return false }
     signal eventSelected(var eventData)
     signal dayActivated(var dayDate)
+    signal eventAdjusted(var eventData, int minuteDelta, int dayDelta, int resizeDelta)
 
     function addDays(date, amount) {
         let result = new Date(date)
@@ -87,6 +89,17 @@ Item {
         })
     }
 
+    function snapMinutes(pixels) {
+        return Math.round((pixels / hourHeight * 60) / 15) * 15
+    }
+
+    function adjustSelected(minuteDelta, dayDelta, resizeDelta) {
+        if (eventCursor < 0 || eventCursor >= visibleWeekEvents.length) return
+        let data = visibleWeekEvents[eventCursor]
+        if (!data.allDay && canAdjustEvent(data))
+            eventAdjusted(data, minuteDelta, dayDelta, resizeDelta)
+    }
+
     Component.onCompleted: refreshEvents()
     onWeekStartChanged: {
         cursorDay = initialCursorDay()
@@ -94,10 +107,26 @@ Item {
         refreshEvents()
     }
     onVisibleChanged: if (visible) forceActiveFocus()
-    Keys.onLeftPressed: moveDay(-1)
-    Keys.onRightPressed: moveDay(1)
-    Keys.onUpPressed: moveEvent(-1)
-    Keys.onDownPressed: moveEvent(1)
+    Keys.onLeftPressed: function(event) {
+        if (event.modifiers & Qt.AltModifier) adjustSelected(0, -1, 0)
+        else moveDay(-1)
+    }
+    Keys.onRightPressed: function(event) {
+        if (event.modifiers & Qt.AltModifier) adjustSelected(0, 1, 0)
+        else moveDay(1)
+    }
+    Keys.onUpPressed: function(event) {
+        if (event.modifiers & Qt.AltModifier)
+            adjustSelected(event.modifiers & Qt.ShiftModifier ? 0 : -15, 0,
+                           event.modifiers & Qt.ShiftModifier ? -15 : 0)
+        else moveEvent(-1)
+    }
+    Keys.onDownPressed: function(event) {
+        if (event.modifiers & Qt.AltModifier)
+            adjustSelected(event.modifiers & Qt.ShiftModifier ? 0 : 15, 0,
+                           event.modifiers & Qt.ShiftModifier ? 15 : 0)
+        else moveEvent(1)
+    }
     Keys.onReturnPressed: {
         if (eventCursor >= 0)
             eventSelected(visibleWeekEvents[eventCursor])
@@ -289,10 +318,10 @@ Item {
                             property int lane: modelData.layoutColumn || 0
                             property int laneCount: modelData.layoutColumnCount || 1
                             property real laneWidth: eventLayer.columnWidth / laneCount
-                            x: column * eventLayer.columnWidth + lane * laneWidth + 4
+                            x: column * eventLayer.columnWidth + lane * laneWidth + 4 + previewDeltaX
                             width: laneWidth - 7
-                            y: root.eventY(startDate)
-                            height: root.eventHeight(startDate, endDate)
+                            y: root.eventY(startDate) + previewDeltaY
+                            height: root.eventHeight(startDate, endDate) + previewHeightDelta
                             visible: column >= 0 && column < 7 && startDate.getHours() < root.endHour && endDate.getHours() >= root.startHour
                             title: modelData.title.length ? modelData.title : "Untitled event"
                             time: root.eventTime(modelData)
@@ -300,11 +329,21 @@ Item {
                             eventColor: modelData.color.length ? modelData.color : theme.accent
                             eventData: modelData
                             emphasized: root.activeFocus && root.eventIndex(modelData) === root.eventCursor
+                            interactive: root.canAdjustEvent(modelData)
                             onActivated: function(data) {
                                 root.eventCursor = root.eventIndex(data)
                                 root.cursorDay = column
                                 root.forceActiveFocus()
                                 root.eventSelected(data)
+                            }
+                            onMoved: function(data, deltaX, deltaY) {
+                                let days = Math.round(deltaX / eventLayer.columnWidth)
+                                let minutes = root.snapMinutes(deltaY)
+                                if (days || minutes) root.eventAdjusted(data, minutes, days, 0)
+                            }
+                            onResized: function(data, deltaY) {
+                                let minutes = root.snapMinutes(deltaY)
+                                if (minutes) root.eventAdjusted(data, 0, 0, minutes)
                             }
                         }
                     }

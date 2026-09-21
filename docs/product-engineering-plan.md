@@ -29,6 +29,7 @@ As of September 20, 2026, the first Phase 0 prototype is running:
 - Phase 2 editing slice with a prefilled native composer, optimistic transactional updates, create-operation coalescing, ETag-protected Google PATCH uploads, and response reconciliation.
 - Safe edit-conflict recovery with current-event lookup, field-level three-way merging, automatic retry for non-overlapping changes, and an explicit conflict state for overlapping changes.
 - Optimistic event deletion with a six-second undo window, restart-safe mutation finalization, ETag-protected Google DELETE, local-create cancellation, remote-absence handling, and restoration after permanent provider rejection.
+- Direct event manipulation in day, week, and month views with 15-minute snapping, lower-edge resizing, keyboard equivalents, optimistic persistence, and debounced mutation coalescing.
 - CMake project plus a qmake bootstrap for the current development machine.
 - Real Wayland visual review with a scoped opaque-window rule for calendar legibility.
 
@@ -209,6 +210,8 @@ Times should be stored as UTC instants plus the original IANA timezone. All-day 
 - `/`: search.
 - `Enter`: open editor.
 - `Delete`: delete with undo.
+- `Alt` + arrow keys: move the selected event by 15 minutes or one day.
+- `Alt` + `Shift` + up/down: resize the selected event by 15 minutes.
 - `Ctrl+Enter`: save.
 - `Escape`: close the current sheet or return focus to the calendar.
 

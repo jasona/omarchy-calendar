@@ -2,6 +2,7 @@
 
 #include <QFileSystemWatcher>
 #include <QObject>
+#include <QTimer>
 
 class Database;
 class GoogleAuth;
@@ -54,4 +55,5 @@ private:
     GoogleMutations &m_googleMutations;
     QString m_feedPath;
     QFileSystemWatcher m_watcher;
+    QTimer m_mutationUploadDelay;
 };

@@ -140,6 +140,35 @@ ApplicationWindow {
             eventEditor.openForEvent(selectedEvent)
     }
 
+    function adjustEvent(eventData, minuteDelta, dayDelta, resizeDelta) {
+        let source = selectedEvent.id === eventData.id
+                   && selectedEvent.calendarId === eventData.calendarId ? selectedEvent : eventData
+        if (!eventEditable(source)) return false
+        let start = new Date(source.startMs)
+        let end = new Date(source.endMs)
+        if (dayDelta) {
+            start.setDate(start.getDate() + dayDelta)
+            end.setDate(end.getDate() + dayDelta)
+        }
+        if (minuteDelta) {
+            start.setMinutes(start.getMinutes() + minuteDelta)
+            end.setMinutes(end.getMinutes() + minuteDelta)
+        }
+        if (resizeDelta)
+            end.setMinutes(end.getMinutes() + resizeDelta)
+        if (end.getTime() - start.getTime() < 15 * 60000) return false
+        let payload = {
+            id: source.id, calendarId: source.calendarId,
+            title: source.title, description: source.description || "",
+            location: source.location || "", allDay: false,
+            startMs: start.getTime(), endMs: end.getTime(),
+            timeZone: source.timeZone || ""
+        }
+        if (!eventStore.updateEvent(payload)) return false
+        selectedEvent = Object.assign({}, source, payload)
+        return true
+    }
+
     function eventDeletable(eventData) {
         if (!eventData || !eventData.id || eventData.source === "compat-json"
                 || pendingDeleteToken.length > 0)
@@ -383,6 +412,8 @@ ApplicationWindow {
                         visible: window.currentView === "week"
                         weekStart: window.weekStart
                         hiddenCalendarIds: window.hiddenCalendarIds
+                        canAdjustEvent: function(data) { return window.eventEditable(data) }
+                        onEventAdjusted: function(data, minuteDelta, dayDelta, resizeDelta) { window.adjustEvent(data, minuteDelta, dayDelta, resizeDelta) }
                         onEventSelected: function(data) { window.selectedEvent = data }
                         onDayActivated: function(date) {
                             window.dayDate = date
@@ -395,6 +426,8 @@ ApplicationWindow {
                         visible: window.currentView === "day"
                         selectedDate: window.dayDate
                         hiddenCalendarIds: window.hiddenCalendarIds
+                        canAdjustEvent: function(data) { return window.eventEditable(data) }
+                        onEventAdjusted: function(data, minuteDelta, dayDelta, resizeDelta) { window.adjustEvent(data, minuteDelta, dayDelta, resizeDelta) }
                         onEventSelected: function(data) { window.selectedEvent = data }
                         onDateNavigation: function(amount) { window.dayDate = window.addDays(window.dayDate, amount) }
                     }
@@ -404,6 +437,8 @@ ApplicationWindow {
                         visible: window.currentView === "month"
                         monthDate: window.monthDate
                         hiddenCalendarIds: window.hiddenCalendarIds
+                        canAdjustEvent: function(data) { return window.eventEditable(data) }
+                        onEventAdjusted: function(data, minuteDelta, dayDelta, resizeDelta) { window.adjustEvent(data, minuteDelta, dayDelta, resizeDelta) }
                         onEventSelected: function(data) { window.selectedEvent = data }
                         onDayActivated: function(date) {
                             window.dayDate = date
@@ -491,6 +526,17 @@ ApplicationWindow {
                                     : "Stored offline by the local Omarchy Calendar service."
                             color: theme.foregroundMuted
                             font.pixelSize: theme.baseFontSize
+                            lineHeight: 1.35
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            visible: window.eventEditable(window.selectedEvent)
+                            width: parent.width
+                            text: "Drag to move · drag the lower edge to resize\nAlt+arrows move · Alt+Shift+↑/↓ resize"
+                            color: theme.accent
+                            opacity: 0.82
+                            font.pixelSize: Math.max(10, theme.baseFontSize - 2)
                             lineHeight: 1.35
                             wrapMode: Text.WordWrap
                         }

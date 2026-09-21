@@ -22,6 +22,12 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
 {
     if (!m_database.finalizeUndoableDeletes())
         qWarning().noquote() << m_database.lastError();
+    m_mutationUploadDelay.setSingleShot(true);
+    m_mutationUploadDelay.setInterval(450);
+    connect(&m_mutationUploadDelay, &QTimer::timeout, this, [this] {
+        if (m_googleAuth.writeAccessAvailable())
+            m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+    });
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, &CalendarService::feedChanged);
     connect(&m_googleAuth, &GoogleAuth::authorizationRequired,
             this, &CalendarService::AuthorizationRequired);
@@ -181,7 +187,7 @@ bool CalendarService::UpdateEvent(const QString &eventJson)
     ensureWatching();
     emit EventsChanged();
     if (m_googleAuth.writeAccessAvailable())
-        m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+        m_mutationUploadDelay.start();
     return true;
 }
 
