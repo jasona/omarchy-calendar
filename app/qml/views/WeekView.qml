@@ -7,6 +7,7 @@ Item {
     Accessible.name: "Week calendar"
     Accessible.description: "Use arrow keys to move between days and events. Press Enter for details."
     property var weekStart: new Date()
+    property date currentTime: new Date()
     property int startHour: 7
     property int endHour: 20
     property real hourHeight: 70
@@ -118,6 +119,14 @@ Item {
             eventAdjusted(data, minuteDelta, dayDelta, resizeDelta)
     }
 
+    Timer {
+        interval: 1000
+        running: root.visible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.currentTime = new Date()
+    }
+
     Component.onCompleted: refreshEvents()
     onWeekStartChanged: {
         cursorDay = initialCursorDay()
@@ -185,7 +194,7 @@ Item {
                 delegate: Item {
                     required property int index
                     property var dayDate: root.addDays(root.weekStart, index)
-                    property bool isToday: Qt.formatDate(dayDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
+                    property bool isToday: Qt.formatDate(dayDate, "yyyy-MM-dd") === Qt.formatDate(root.currentTime, "yyyy-MM-dd")
                     width: dayHeader.width / 7
                     height: dayHeader.height
 
@@ -381,10 +390,9 @@ Item {
                     }
 
                     Rectangle {
-                        property date now: new Date()
-                        property int todayColumn: root.dayIndex(Qt.formatDate(now, "yyyy-MM-dd"))
+                        property int todayColumn: root.dayIndex(Qt.formatDate(root.currentTime, "yyyy-MM-dd"))
                         x: todayColumn * eventLayer.columnWidth
-                        y: root.eventY(now)
+                        y: root.eventY(root.currentTime) + root.currentTime.getSeconds() / 3600 * root.hourHeight
                         width: eventLayer.columnWidth
                         height: 1
                         visible: todayColumn >= 0 && todayColumn < 7

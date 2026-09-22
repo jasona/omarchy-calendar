@@ -7,6 +7,7 @@ Item {
     Accessible.name: "Day calendar"
     Accessible.description: "Use up and down arrows to move between events. Press Enter for details."
     property var selectedDate: new Date()
+    property date currentTime: new Date()
     property int startHour: 7
     property int endHour: 20
     property real hourHeight: 70
@@ -77,6 +78,14 @@ Item {
         if (canAdjustEvent(data)) eventAdjusted(data, minuteDelta, dayDelta, resizeDelta)
     }
 
+    Timer {
+        interval: 1000
+        running: root.visible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.currentTime = new Date()
+    }
+
     Component.onCompleted: refreshEvents()
     onSelectedDateChanged: refreshEvents()
     onVisibleTimedEventsChanged: eventCursor = visibleTimedEvents.length ? Math.min(Math.max(0, eventCursor), visibleTimedEvents.length - 1) : -1
@@ -132,7 +141,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: Qt.formatDate(root.selectedDate, "dddd").toUpperCase()
-                    color: Qt.formatDate(root.selectedDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd") ? theme.accent : theme.foregroundMuted
+                    color: Qt.formatDate(root.selectedDate, "yyyy-MM-dd") === Qt.formatDate(root.currentTime, "yyyy-MM-dd") ? theme.accent : theme.foregroundMuted
                     font.pixelSize: Math.max(10, theme.baseFontSize - 2)
                     font.weight: Font.DemiBold
                     font.letterSpacing: 1.1
@@ -264,11 +273,10 @@ Item {
                     }
 
                     Rectangle {
-                        property date now: new Date()
-                        y: root.eventY(now)
+                        y: root.eventY(root.currentTime) + root.currentTime.getSeconds() / 3600 * root.hourHeight
                         width: parent.width
                         height: 1
-                        visible: Qt.formatDate(root.selectedDate, "yyyy-MM-dd") === Qt.formatDate(now, "yyyy-MM-dd")
+                        visible: Qt.formatDate(root.selectedDate, "yyyy-MM-dd") === Qt.formatDate(root.currentTime, "yyyy-MM-dd")
                         color: theme.red
                         Rectangle { x: -3; y: -3; width: 7; height: 7; radius: 4; color: theme.red }
                     }
