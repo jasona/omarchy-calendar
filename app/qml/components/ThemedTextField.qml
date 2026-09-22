@@ -3,7 +3,9 @@ import QtQuick.Controls
 
 TextField {
     id: control
-    implicitHeight: 42
+    property string accessibleName: placeholderText
+    Accessible.name: accessibleName
+    implicitHeight: Math.round(42 * (preferences.interfaceDensity === "compact" ? 0.88 : 1))
     leftPadding: 13
     rightPadding: 13
     color: theme.foreground
@@ -14,7 +16,7 @@ TextField {
     font.pixelSize: theme.baseFontSize
 
     background: Rectangle {
-        radius: 9
+        radius: theme.controlRadius
         color: control.activeFocus
                ? Qt.rgba(theme.surfaceRaised.r, theme.surfaceRaised.g, theme.surfaceRaised.b, 0.94)
                : theme.surface

@@ -2,9 +2,10 @@
 
 Omarchy Calendar uses Google's installed desktop application flow with PKCE
 and a temporary loopback listener on `127.0.0.1`. It requests the narrow
-`calendar.calendarlist.readonly` and `calendar.events` scopes. The latter is
-requested when the user chooses **Enable editing**, and permits creating,
-updating, and deleting events without granting broader calendar-settings access.
+`openid`, `email`, `calendar.calendarlist.readonly`, and `calendar.events`
+scopes. OpenID and email identify and label the connected account. Calendar
+event access permits synchronization and user-directed creation, updates, and
+deletion without granting broader calendar-settings access.
 Refresh tokens are stored in Secret Service.
 
 Create an OAuth client whose application type is **Desktop app**, then create:

@@ -9,3 +9,5 @@ Terminal=false
 Categories=Office;Calendar;
 Keywords=calendar;events;schedule;Google;
 StartupWMClass=org.omarchy.Calendar
+StartupNotify=true
+X-GNOME-UsesNotifications=true

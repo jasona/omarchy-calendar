@@ -97,7 +97,16 @@ void GoogleSync::cancel()
     m_currentStage.clear();
     m_lastError.clear();
     m_retryAt.clear();
+    clearWorkingSet();
     emit stateChanged();
+}
+
+void GoogleSync::clearWorkingSet()
+{
+    m_calendarItems = QJsonArray {};
+    m_eventItems = QJsonArray {};
+    m_calendarQueue.clear();
+    m_currentCalendar.clear();
 }
 
 void GoogleSync::beginAttempt()
@@ -287,6 +296,7 @@ void GoogleSync::fail(const QString &message, bool retryable)
     m_database.updateAccountSyncState(m_accountId,
                                       m_retryPending ? QStringLiteral("retrying")
                                                      : QStringLiteral("error"), message);
+    clearWorkingSet();
     emit stateChanged();
     emit finished(false);
 }
@@ -314,6 +324,7 @@ void GoogleSync::complete()
     m_retryAt.clear();
     m_currentStage.clear();
     m_lastSuccessAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    clearWorkingSet();
     emit stateChanged();
     emit finished(m_changed);
 }

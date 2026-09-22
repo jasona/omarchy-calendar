@@ -489,7 +489,7 @@
         <h1>The road to a <span>truly native</span> calendar.</h1>
         <p class="lede">A living, public record of what is shipped, what is underway, and what comes next on the path to a complete native calendar for Omarchy.</p>
         <div class="hero-grid">
-          <div class="stat stat--current"><div class="stat__label">Current focus</div><div class="stat__value">Rich event details</div><div class="stat__note">Add reminders, guests, organizer state, privacy, and calendar moves</div></div>
+          <div class="stat stat--current"><div class="stat__label">Current focus</div><div class="stat__value">Google OAuth review</div><div class="stat__note">Branding is verified and the app is in production; record the demo and submit the scope review</div></div>
           <div class="stat"><div class="stat__label">Finished</div><div class="stat__value" data-count="done">—</div><div class="stat__note">Shipped deliverables</div></div>
           <div class="stat"><div class="stat__label">In progress</div><div class="stat__value" data-count="active">—</div><div class="stat__note">Active deliverables</div></div>
           <div class="stat"><div class="stat__label">Still unfinished</div><div class="stat__value" data-count="unfinished">—</div><div class="stat__note"><span data-count="percent">—</span>% of roadmap shipped</div><div class="progress-track" aria-hidden="true"><div class="progress-fill"></div></div></div>
@@ -527,7 +527,7 @@
       <div class="work-grid">
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Native application shell</h3></div><ul><li>Qt/QML day, week, month, and agenda views</li><li>Sidebar, inspector, navigation, and event cards</li><li>Wayland review and legible native window treatment</li></ul></article>
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Omarchy visual system</h3></div><ul><li>Live palette and font-token loading</li><li>Automatic theme file watching</li><li>Themed event composer controls</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Offline data foundation</h3></div><ul><li>SQLite WAL database and seven schema generations</li><li>Transactional imports and integrity checks</li><li>Provider-neutral multi-account identities</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Offline data foundation</h3></div><ul><li>SQLite WAL database and ten schema generations</li><li>Transactional imports and integrity checks</li><li>Provider-neutral multi-account identities</li></ul></article>
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Desktop experience</h3></div><ul><li>Calendar navigation and current-time indicators</li><li>45-day agenda and local search</li><li>Visibility controls and overlapping-event layout</li></ul></article>
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Keyboard navigation</h3></div><ul><li>Focus cursors in every primary view</li><li>Arrow, J/K, Enter, Today, view, and search shortcuts</li><li>Automatic scrolling to selected events</li></ul></article>
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Google accounts &amp; OAuth</h3></div><ul><li>Desktop PKCE flow with loopback callback</li><li>Secret Service refresh-token storage</li><li>Account settings, removal, and editing-scope upgrade</li></ul></article>
@@ -537,14 +537,14 @@
       </div>
     </section>
 
-    <section id="validate" class="wrap validation" data-roadmap-item data-status="active">
+    <section id="validate" class="wrap validation" data-roadmap-item data-status="done">
       <div class="validation__head"><h2>Immediate real-world validation</h2></div>
       <ul class="checklist">
-        <li>Create one real event and confirm it appears in Google Calendar.</li>
-        <li>Confirm incremental sync returns the same event without duplication.</li>
-        <li>Create while offline, reconnect, and observe automatic upload.</li>
-        <li>Terminate the service mid-upload and verify idempotent recovery.</li>
-        <li>Exercise rate limiting and revoked authorization for mutations.</li>
+        <li>✓ Created a real event, confirmed its Google identity, deleted it, and confirmed clean resynchronization.</li>
+        <li>✓ Incremental synchronization retains one canonical event without duplication.</li>
+        <li>✓ Offline create, update, RSVP, move, and delete operations survive process restarts.</li>
+        <li>✓ Interrupted uploading state resumes through the durable idempotent queue.</li>
+        <li>✓ Rate limiting, server errors, expired cursors, revoked authorization, conflicts, disk errors, corrupt cache, and missing Secret Service are deterministic drills.</li>
       </ul>
     </section>
 
@@ -561,10 +561,10 @@
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>All-day &amp; multi-day</h3></div><ul><li>Date-only storage without UTC conversion</li><li>Multi-day spans in every view</li><li>Move between timed and all-day sections</li><li>Boundary and timezone tests</li></ul></article>
         <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Timezones</h3></div><ul><li>IANA timezone picker and recent choices</li><li>Original zone plus local equivalent</li><li>DST gaps and repeated-hour handling</li><li>Cross-timezone test matrix</li></ul></article>
         <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Recurrence &amp; exceptions</h3></div><ul><li>✓ Series identity, exception metadata, RRULE parsing, and DST-safe local expansion</li><li>✓ Daily, weekday, weekly, monthly, yearly, custom-interval, and count-limited creation</li><li>✓ Edit one occurrence, this and following, or the entire series with parent-ETag protection</li><li>✓ Undoable cancellation for one occurrence, this and following, or the entire series</li></ul></article>
-        <article class="work-card work-card--wide" data-roadmap-item data-status="active"><div class="work-card__top"><h3>Rich event details</h3></div><ul><li>Reminders, descriptions, locations, links, and guests</li><li>Organizer and attendee roles</li><li>Busy/free, privacy, calendar selection, and calendar moves</li><li>Provider capability restrictions surfaced clearly</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Quick entry</h3></div><ul><li>Natural-language input</li><li>Explicit interpretation preview</li><li>Fast keyboard-first correction</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Search depth</h3></div><ul><li>Description and attendee search</li><li>Date, calendar, organizer, and response filters</li><li>Highlighting and keyboard actions</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Mutation reliability</h3></div><ul><li>Update, delete, move, and RSVP queue operations</li><li>Coalescing, ordering, retry, and queue inspection</li><li>Manual retry, discard, and conflict resolution</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Rich event details</h3></div><ul><li>✓ Reminders, descriptions, locations, meeting links, and guests</li><li>✓ Organizer identity and attendee response state</li><li>✓ Busy/free, privacy, and guest permissions</li><li>✓ Calendar moves with organizer, recurrence, event-type, and destination capability checks</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Quick entry</h3></div><ul><li>✓ Natural-language input for relative dates, weekdays, times, and durations</li><li>✓ Explicit interpretation preview before creation</li><li>✓ Ctrl+K flow into the full composer for keyboard-first correction</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Search depth</h3></div><ul><li>✓ Title, description, location, calendar, organizer, and attendee search</li><li>✓ Date, calendar, organizer, and response filters</li><li>✓ Match highlighting and keyboard result actions</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Mutation reliability</h3></div><ul><li>✓ Create, update, delete, and move queue operations</li><li>✓ Coalescing, strict ordering, exponential retry, and queue inspection</li><li>✓ Manual retry, discard, and edit-or-discard conflict resolution</li></ul></article>
       </div>
       <div class="exit"><strong>Exit condition</strong><span>Ordinary personal calendar management no longer requires opening Google Calendar.</span></div>
     </section>
@@ -576,11 +576,11 @@
         <p class="phase-summary">Turn the calendar from a personal organizer into a complete workday command center.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Invitations &amp; RSVP</h3></div><ul><li>Invitation and response states</li><li>Accept, decline, and tentative mutations</li><li>Invitation notifications</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Meeting links</h3></div><ul><li>Create Google Meet conferences</li><li>Parse Meet, Zoom, Teams, phones, and PINs</li><li>Prominent Join action at the right time</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Availability</h3></div><ul><li>Google FreeBusy integration</li><li>Shared availability timeline</li><li>Find common meeting windows</li></ul></article>
-        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Work event types</h3></div><ul><li>Focus time and out-of-office</li><li>Working location</li><li>Capability-aware controls for API limitations</li></ul></article>
-        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Reminders &amp; snoozing</h3></div><ul><li>Background reminder scheduling</li><li>Open, Join, Snooze, and Dismiss actions</li><li>Persistent snooze and delivery state</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Invitations &amp; RSVP</h3></div><ul><li>✓ Invitation and signed-in attendee response states</li><li>✓ Accept, decline, and tentative mutations with ETag-safe rebase</li><li>✓ Deduplicated desktop notifications for new unanswered invitations</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Meeting links</h3></div><ul><li>✓ Capability-aware Google Meet creation with idempotent request IDs</li><li>✓ Normalized Meet, Zoom, Teams, phone, SIP, PIN, and access-code entry points</li><li>✓ Prominent provider-specific Join and Call actions in the inspector</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Availability · after v1.0</h3></div><ul><li>Google FreeBusy integration</li><li>Shared availability timeline</li><li>Find common meeting windows</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Work event types · after v1.0</h3></div><ul><li>Focus time and out-of-office</li><li>Working location</li><li>Capability-aware controls for API limitations</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Reminders &amp; snoozing</h3></div><ul><li>✓ Background scheduling for event overrides and calendar defaults</li><li>✓ Open, Join, Snooze, and Dismiss notification actions</li><li>✓ Persistent delivery and snooze state with first-run flood protection</li></ul></article>
       </div>
       <div class="exit"><strong>Exit condition</strong><span>Common work-calendar and meeting workflows are complete without a browser.</span></div>
     </section>
@@ -592,16 +592,16 @@
         <p class="phase-summary">Unify shell integration, visual quality, accessibility, diagnostics, performance, and distribution into a release-ready product.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Shell companion</h3></div><ul><li>DBus-based bar plugin</li><li>Agenda, countdown, Join, refresh, and quick add</li><li>Global show/hide and creation shortcuts</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Visual refinement</h3></div><ul><li>Spacing, rounding, opacity, and border tokens</li><li>Dark and light themes, density modes</li><li>Responsive layouts and purposeful motion</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Accessibility</h3></div><ul><li>Complete keyboard access and focus order</li><li>Accessible roles, labels, and screen readers</li><li>Contrast and large-font resilience</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Onboarding</h3></div><ul><li>First-run tour and OAuth guidance</li><li>Account health and actionable errors</li><li>Redacted diagnostics export</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Performance</h3></div><ul><li>Cold start and memory profiling</li><li>Large-calendar model virtualization</li><li>Database, search, and service endurance</li></ul></article>
-        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Packaging</h3></div><ul><li>Arch PKGBUILD and production paths</li><li>Clean install, upgrade, and uninstall</li><li>Versioning, CI, changelog, and releases</li></ul></article>
-        <article class="work-card work-card--full" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Multi-account support</h3></div><ul><li>Connect multiple Google identities, group calendars by account, route mutations correctly, and make account-level health obvious without cluttering the daily experience.</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Shell companion · after v1.0</h3></div><ul><li>DBus-based bar plugin</li><li>Agenda, countdown, Join, refresh, and quick add</li><li>Global show/hide and creation shortcuts</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Visual refinement</h3></div><ul><li>✓ Shared control, card, panel, spacing, border, and opacity language</li><li>✓ Live Omarchy palettes with comfortable and compact density modes</li><li>✓ Responsive 900×640 shell, scrolling details, and focused motion</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Accessibility</h3></div><ul><li>✓ Complete keyboard operation, visible focus, and in-app F1 guide</li><li>✓ Named views, controls, events, roles, states, and screen-reader actions</li><li>✓ Enforced WCAG contrast targets and bounded large-font scaling</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Onboarding</h3></div><ul><li>✓ Themed first-run guide with OAuth and offline guidance</li><li>✓ Live connection, sync health, and actionable errors</li><li>✓ Clipboard diagnostics export with identity and content redaction</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Performance</h3></div><ul><li>✓ 20,000-event import, range-load, and search budget enforced in a repeatable test</li><li>✓ Live 7,000-event week queries measured at about 7 ms</li><li>✓ Sync response buffers released after every outcome; post-sync RSS reduced from about 130 MB to 111 MB</li></ul></article>
+        <article class="work-card" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Packaging</h3></div><ul><li>✓ Arch PKGBUILD, versioned production paths, icon, desktop, DBus, systemd, and AppStream metadata</li><li>✓ Clean staged install with preserved user data and validated package manifest</li><li>✓ CI workflow, semantic changelog, MIT license, and release-candidate versioning</li></ul></article>
+        <article class="work-card work-card--full" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Multi-account support · after v1.0</h3></div><ul><li>Connect multiple Google identities, group calendars by account, route mutations correctly, and make account-level health obvious without cluttering the daily experience.</li></ul></article>
       </div>
-      <div class="release-blocker" data-roadmap-item data-status="blocked"><div class="release-blocker__flag">External release blocker</div><div><h3>Google verification</h3><p>Production Cloud project, final consent branding, public privacy policy and terms, verified domains, support contact, sensitive-scope verification, production OAuth clients, and a dedicated integration-test account.</p></div></div>
-      <div class="exit"><strong>Exit condition</strong><span>The app feels like an Omarchy component rather than a themed third-party calendar.</span></div>
+      <div class="release-blocker" data-roadmap-item data-status="blocked"><div class="release-blocker__flag">External release blocker</div><div><h3>Google verification</h3><p>The Last Refuge pages are live, domain ownership and branding are verified, the app is in production, the OAuth scope set is minimal, and the sensitive-scope justification is entered. The publisher must record the required demonstration, provide its unlisted YouTube URL, submit the scope review, and receive Google’s approval.</p></div></div>
+      <div class="exit"><strong>v1.0 release gate</strong><span>Daily calendar work, invitations, meeting links, and reminders are complete; onboarding, accessibility, visual polish, performance, packaging, migrations, failure drills, public OAuth, and real-account testing are release-ready with no known data-loss or blocker defects.</span></div>
     </section>
 
     <section id="phase-5" class="phase wrap" data-nav="Phase 5">
@@ -625,24 +625,23 @@
         <p class="phase-summary">Correctness and resilience are built alongside each feature, with real APIs and real failure conditions.</p>
       </header>
       <div class="work-grid">
-        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Automated correctness</h3></div><ul><li>Every schema migration from every released version</li><li>All-day, multi-day, timezone, and DST boundaries</li><li>Recurrence, exceptions, conflict resolution, and coalescing</li><li>Create, update, delete, RSVP, drag, resize, focus, and undo</li></ul></article>
-        <article class="work-card work-card--wide" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Integration &amp; failure drills</h3></div><ul><li>Dedicated Google account for full lifecycle tests</li><li>Offline edits and reconnection</li><li>Termination during every mutation type</li><li>Secret Service, disk, token, quota, and cache failures</li></ul></article>
-        <article class="work-card work-card--full" data-roadmap-item data-status="planned"><div class="work-card__top"><h3>Visual confidence</h3></div><ul><li>Repeatable snapshots for every primary view across themes, density modes, empty/loading/error states, and 100%, 125%, 150%, and 200% display scaling.</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Automated correctness</h3></div><ul><li>✓ Fresh schema and development migration coverage through schema 10</li><li>✓ All-day, multi-day, timezone, DST, recurrence, and exception boundaries</li><li>✓ Conflict resolution, coalescing, create, update, delete, RSVP, move, resize, focus, and undo</li><li>✓ One-command 22-contract suite in CI</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Integration &amp; failure drills</h3></div><ul><li>✓ Reversible live Google create/upload/delete/resync lifecycle</li><li>✓ Offline mutations and interrupted uploads survive restart</li><li>✓ Server, quota, cursor, authorization, conflict, disk, cache, and Secret Service failures</li><li>✓ Redacted diagnostics preserve actionable errors</li></ul></article>
+        <article class="work-card work-card--wide" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Release hardening</h3></div><ul><li>✓ Uploads stop before network access when queue state cannot be persisted</li><li>✓ Release tags, OAuth credentials, public-domain metadata, package contents, and checksums are automated</li><li>✓ Private vulnerability reporting and supported-version policy are published</li></ul></article>
+        <article class="work-card work-card--full" data-roadmap-item data-status="done"><div class="work-card__top"><h3>Visual confidence</h3></div><ul><li>✓ Repeatable offscreen captures for day, week, month, agenda, search, settings, and onboarding in light and dark themes</li><li>✓ Comfortable and compact density baselines plus 100%, 125%, 150%, and 200% scale smoke renders</li><li>✓ Sanitized v1 visual matrix published with the source</li></ul></article>
       </div>
     </section>
 
     <section class="sequence wrap">
       <div class="eyebrow">Execution order</div>
-      <h2>The shortest path from today to a daily-driver release.</h2>
+      <h2>The completed path to the release candidate—and the final public gate.</h2>
       <div class="sequence-list">
-        <div class="sequence-row"><strong>Real-world create validation</strong><span>Close the last loop on current work</span></div>
-        <div class="sequence-row"><strong>Edit, delete, and undo</strong><span>Complete basic CRUD</span></div>
-        <div class="sequence-row"><strong>Move and resize</strong><span>Unlock direct manipulation</span></div>
-        <div class="sequence-row"><strong>All-day and timezone correctness</strong><span>Protect calendar semantics</span></div>
-        <div class="sequence-row"><strong>Recurrence</strong><span>Complete the hard event model</span></div>
-        <div class="sequence-row"><strong>Reminders, guests, and meetings</strong><span>Reach work-calendar depth</span></div>
-        <div class="sequence-row"><strong>Omarchy shell and packaging</strong><span>Turn the app into a product</span></div>
-        <div class="sequence-row"><strong>CalDAV and portable calendars</strong><span>Expand beyond one provider</span></div>
+        <div class="sequence-row"><strong>✓ Core calendar workflow</strong><span>Create, edit, delete, undo, move, and resize</span></div>
+        <div class="sequence-row"><strong>✓ Calendar correctness</strong><span>All-day, timezone, DST, recurrence, and conflicts</span></div>
+        <div class="sequence-row"><strong>✓ Workday depth</strong><span>Reminders, guests, RSVP, meetings, search, and quick add</span></div>
+        <div class="sequence-row"><strong>✓ Productization</strong><span>Polish, accessibility, resilience, packaging, CI, and release automation</span></div>
+        <div class="sequence-row"><strong>Current · Google production approval</strong><span>Demo recording, sensitive-scope submission, and approval</span></div>
+        <div class="sequence-row"><strong>After v1.0 · Expansion</strong><span>Shell companion, availability, work event types, multi-account, and CalDAV</span></div>
       </div>
     </section>
 
@@ -652,7 +651,7 @@
     </details>
   </main>
 
-  <footer><div class="wrap"><span>Omarchy Calendar · Product &amp; Engineering Roadmap</span><span>Last updated <time id="last-updated" datetime="2026-09-20">September 20, 2026</time></span></div></footer>
+  <footer><div class="wrap"><span>Omarchy Calendar · Product &amp; Engineering Roadmap</span><span>Last updated <time id="last-updated" datetime="2026-09-21">September 21, 2026</time></span></div></footer>
 
   <script>
     const statusLabels = { done: 'Finished', active: 'In progress', planned: 'Planned', blocked: 'Blocked' };

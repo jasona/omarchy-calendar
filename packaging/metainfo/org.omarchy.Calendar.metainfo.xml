@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.omarchy.Calendar</id>
+  <name>Omarchy Calendar</name>
+  <summary>A polished native calendar for Omarchy</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Omarchy Calendar is a keyboard-friendly Qt calendar with offline storage, Google synchronization, event editing, recurring events, invitations, meeting links, and desktop reminders.</p>
+    <p>It follows the active Omarchy palette and typography while keeping calendar data useful when the network is unavailable.</p>
+  </description>
+  <launchable type="desktop-id">org.omarchy.Calendar.desktop</launchable>
+  <provides><binary>omarchy-calendar</binary></provides>
+  <url type="homepage">https://lastrefuge.ai/projects/omarchy-calendar</url>
+  <url type="bugtracker">https://github.com/jasona/omarchy-calendar/issues</url>
+  <developer id="com.github.jasona">
+    <name>Omarchy Calendar contributors</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.9.0" date="2026-09-21">
+      <description><p>First public release candidate.</p></description>
+    </release>
+  </releases>
+</component>

@@ -8,8 +8,8 @@ ApplicationWindow {
     id: window
     width: 1420
     height: 880
-    minimumWidth: 1060
-    minimumHeight: 700
+    minimumWidth: 900
+    minimumHeight: 640
     visible: true
     title: "Omarchy Calendar"
     color: theme.backgroundDeep
@@ -30,6 +30,8 @@ ApplicationWindow {
     property string pendingDeleteTitle: ""
     property string currentView: "week"
     property var hiddenCalendarIds: preferences.hiddenCalendarIds
+    property real densityScale: preferences.interfaceDensity === "compact" ? 0.88 : 1
+    property bool showInspector: currentView !== "settings" && currentView !== "onboarding"
 
     function startOfWeek(date) {
         let result = new Date(date)
@@ -128,6 +130,8 @@ ApplicationWindow {
         upcomingEvent = eventStore.nextEvent()
         if (!selectedEvent.id)
             selectedEvent = upcomingEvent
+        if (!preferences.onboardingCompleted && accountList.length === 0)
+            currentView = "onboarding"
     }
 
     function connectGoogle() {
@@ -156,7 +160,7 @@ ApplicationWindow {
 
     function eventEditable(eventData) {
         if (!eventData || !eventData.id || eventData.source === "compat-json"
-                )
+                || eventData.canModify === false)
             return false
         return calendarList.some(function(calendar) {
             return calendar.id === eventData.calendarId
@@ -167,6 +171,70 @@ ApplicationWindow {
     function editSelectedEvent() {
         if (eventEditable(selectedEvent))
             eventEditor.openForEvent(selectedEvent)
+    }
+
+    function attendeeSummary(eventData) {
+        if (!eventData || !eventData.attendees || !eventData.attendees.length) return ""
+        let accepted = 0
+        let tentative = 0
+        let declined = 0
+        let awaiting = 0
+        for (let attendee of eventData.attendees) {
+            if (attendee.responseStatus === "accepted") ++accepted
+            else if (attendee.responseStatus === "tentative") ++tentative
+            else if (attendee.responseStatus === "declined") ++declined
+            else ++awaiting
+        }
+        let parts = []
+        if (accepted) parts.push(accepted + " accepted")
+        if (tentative) parts.push(tentative + " tentative")
+        if (awaiting) parts.push(awaiting + " awaiting")
+        if (declined) parts.push(declined + " declined")
+        return parts.join(" · ")
+    }
+
+    function reminderSummary(eventData) {
+        if (!eventData || !eventData.reminders) return ""
+        if (eventData.reminders.useDefault) return "Default reminders"
+        let overrides = eventData.reminders.overrides || []
+        if (!overrides.length) return "No reminders"
+        return overrides.map(function(reminder) {
+            let minutes = Number(reminder.minutes)
+            if (minutes % 10080 === 0) return (minutes / 10080) + "w before"
+            if (minutes % 1440 === 0) return (minutes / 1440) + "d before"
+            if (minutes % 60 === 0) return (minutes / 60) + "h before"
+            return minutes + "m before"
+        }).join(" · ")
+    }
+
+    function attendeeNames(eventData) {
+        if (!eventData || !eventData.attendees) return ""
+        let names = eventData.attendees.filter(function(attendee) { return !attendee.self })
+            .map(function(attendee) { return attendee.displayName || attendee.email || "" })
+            .filter(function(value) { return value.length > 0 })
+        if (names.length > 4) return names.slice(0, 4).join(", ") + " +" + (names.length - 4)
+        return names.join(", ")
+    }
+
+    function meetingLinks(eventData) {
+        if (!eventData) return []
+        if (eventData.meetingLinks && eventData.meetingLinks.length)
+            return eventData.meetingLinks
+        if (eventData.hangoutLink)
+            return [ { uri: eventData.hangoutLink, label: "Join Google Meet", kind: "google-meet" } ]
+        return []
+    }
+
+    function respondToInvitation(status) {
+        if (!selectedEvent.canRespond) return
+        if (!eventStore.respondToInvitation(selectedEvent.calendarId, selectedEvent.id, status)) return
+        let attendees = (selectedEvent.attendees || []).map(function(attendee) {
+            if (!attendee.self) return attendee
+            return Object.assign({}, attendee, { responseStatus: status })
+        })
+        selectedEvent = Object.assign({}, selectedEvent,
+                                      { attendees: attendees, selfResponseStatus: status })
+        refreshFeedMetadata()
     }
 
     function adjustEvent(eventData, minuteDelta, dayDelta, resizeDelta) {
@@ -293,6 +361,8 @@ ApplicationWindow {
     Shortcut { sequence: "4"; enabled: window.currentView !== "search"; onActivated: window.currentView = "agenda" }
     Shortcut { sequence: "/"; enabled: window.currentView !== "search"; onActivated: window.currentView = "search" }
     Shortcut { sequence: "Ctrl+,"; onActivated: window.currentView = "settings" }
+    Shortcut { sequence: "F1"; onActivated: shortcutHelp.open() }
+    Shortcut { sequence: "Ctrl+K"; enabled: !eventEditor.opened && !quickEntryPopup.opened; onActivated: quickEntryPopup.openForEntry() }
     Shortcut { sequence: "N"; enabled: !eventEditor.opened; onActivated: window.openEventEditor() }
     Shortcut { sequence: "E"; enabled: !eventEditor.opened && window.eventEditable(window.selectedEvent); onActivated: window.editSelectedEvent() }
     Shortcut { sequence: "Delete"; enabled: !eventEditor.opened && window.eventDeletable(window.selectedEvent); onActivated: window.deleteSelectedEvent() }
@@ -312,7 +382,7 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 68
+                Layout.preferredHeight: Math.round(68 * window.densityScale)
                 color: theme.backgroundDeep
 
                 RowLayout {
@@ -328,15 +398,16 @@ ApplicationWindow {
                         Layout.preferredWidth: 185
                     }
 
-                    CalendarButton { text: "‹"; visible: ["day", "week", "month"].indexOf(window.currentView) >= 0; Layout.preferredWidth: visible ? 36 : 0; onClicked: window.navigatePrevious() }
-                    CalendarButton { text: "›"; visible: ["day", "week", "month"].indexOf(window.currentView) >= 0; Layout.preferredWidth: visible ? 36 : 0; onClicked: window.navigateNext() }
-                    CalendarButton { text: "Today"; visible: window.currentView !== "search" && window.currentView !== "settings"; onClicked: window.goToday() }
+                    CalendarButton { text: "‹"; accessibleName: "Previous period"; visible: ["day", "week", "month"].indexOf(window.currentView) >= 0; Layout.preferredWidth: visible ? 36 : 0; onClicked: window.navigatePrevious() }
+                    CalendarButton { text: "›"; accessibleName: "Next period"; visible: ["day", "week", "month"].indexOf(window.currentView) >= 0; Layout.preferredWidth: visible ? 36 : 0; onClicked: window.navigateNext() }
+                    CalendarButton { text: "Today"; visible: window.currentView !== "search" && window.currentView !== "settings" && window.currentView !== "onboarding"; onClicked: window.goToday() }
 
                     Text {
                         id: periodTitle
                         text: window.currentView === "agenda" ? "Agenda"
                               : window.currentView === "search" ? "Search"
                               : window.currentView === "settings" ? "Settings"
+                              : window.currentView === "onboarding" ? "Welcome"
                               : window.currentView === "day" ? Qt.formatDate(window.dayDate, "dddd, MMMM d, yyyy")
                               : window.currentView === "month" ? Qt.formatDate(window.monthDate, "MMMM yyyy")
                               : window.formatWeekTitle(window.weekStart)
@@ -348,6 +419,7 @@ ApplicationWindow {
                     }
 
                     Rectangle {
+                        visible: window.currentView !== "onboarding"
                         Layout.preferredWidth: viewButtons.width + 8
                         Layout.preferredHeight: 42
                         radius: 11
@@ -362,8 +434,10 @@ ApplicationWindow {
                         }
                     }
 
-                    CalendarButton { text: "⌕"; Layout.preferredWidth: 38; selected: window.currentView === "search"; onClicked: window.currentView = "search" }
-                    CalendarButton { text: "+  New event"; accentColor: theme.accent; selected: true; onClicked: window.openEventEditor() }
+                    CalendarButton { visible: window.currentView !== "onboarding"; text: "⌕"; accessibleName: "Search calendar"; Layout.preferredWidth: visible ? 38 : 0; selected: window.currentView === "search"; onClicked: window.currentView = "search" }
+                    CalendarButton { visible: window.currentView !== "onboarding"; text: "?"; accessibleName: "Keyboard shortcuts"; Layout.preferredWidth: visible ? 38 : 0; onClicked: shortcutHelp.open() }
+                    CalendarButton { visible: window.currentView !== "onboarding"; text: "Quick add"; onClicked: quickEntryPopup.openForEntry() }
+                    CalendarButton { visible: window.currentView !== "onboarding"; text: "+  New event"; accentColor: theme.accent; selected: true; onClicked: window.openEventEditor() }
                 }
 
                 Rectangle {
@@ -379,7 +453,8 @@ ApplicationWindow {
                 spacing: 0
 
                 Rectangle {
-                    Layout.preferredWidth: 224
+                    visible: window.currentView !== "onboarding"
+                    Layout.preferredWidth: window.width < 1080 ? 190 : 224
                     Layout.fillHeight: true
                     color: theme.backgroundDeep
 
@@ -406,11 +481,21 @@ ApplicationWindow {
                         Repeater {
                             model: window.calendarList
                             delegate: Rectangle {
+                                id: calendarToggle
                                 required property var modelData
                                 width: parent.width
                                 height: 28
                                 radius: 7
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: modelData.name
+                                Accessible.checked: window.calendarVisible(modelData.id)
+                                Accessible.onPressAction: window.toggleCalendar(modelData.id)
+                                Keys.onSpacePressed: window.toggleCalendar(modelData.id)
+                                Keys.onReturnPressed: window.toggleCalendar(modelData.id)
                                 color: calendarPointer.containsMouse ? Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.06) : "transparent"
+                                border.width: activeFocus ? 1 : 0
+                                border.color: theme.accent
                                 opacity: window.calendarVisible(modelData.id) ? 1 : 0.48
                                 Row {
                                     anchors { fill: parent; leftMargin: 2; rightMargin: 5 }
@@ -424,7 +509,10 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: window.toggleCalendar(modelData.id)
+                                    onClicked: {
+                                        calendarToggle.forceActiveFocus()
+                                        window.toggleCalendar(modelData.id)
+                                    }
                                 }
                             }
                         }
@@ -532,25 +620,46 @@ ApplicationWindow {
                         onSyncGoogle: window.syncGoogle()
                         onDisconnectGoogle: window.disconnectGoogle()
                         onSetCalendarSync: function(calendarId, enabled) { window.setCalendarSync(calendarId, enabled) }
+                        onShowOnboarding: window.currentView = "onboarding"
+                    }
+
+                    OnboardingView {
+                        anchors.fill: parent
+                        visible: window.currentView === "onboarding"
+                        accounts: window.accountList
+                        calendars: window.calendarList
+                        providerStatus: window.providerStatus
+                        onConnectGoogle: window.connectGoogle()
+                        onFinish: {
+                            preferences.onboardingCompleted = true
+                            window.currentView = "week"
+                        }
                     }
                 }
 
-                Rectangle { visible: window.currentView !== "settings"; Layout.preferredWidth: visible ? 1 : 0; Layout.fillHeight: true; color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.10) }
+                Rectangle { visible: window.showInspector; Layout.preferredWidth: visible ? 1 : 0; Layout.fillHeight: true; color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.10) }
 
                 Rectangle {
-                    visible: window.currentView !== "settings"
-                    Layout.preferredWidth: visible ? 278 : 0
+                    visible: window.showInspector
+                    Layout.preferredWidth: visible ? (window.width < 1100 ? 238 : 278) : 0
                     Layout.fillHeight: true
                     color: theme.backgroundDeep
 
-                    Column {
+                    ScrollView {
+                        id: inspectorScroll
                         anchors { fill: parent; margins: 20 }
+                        contentWidth: availableWidth
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    Column {
+                        width: inspectorScroll.availableWidth
                         spacing: 18
 
                         Row {
                             width: parent.width
                             Text { text: "Event details"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 4; font.weight: Font.DemiBold; width: parent.width - 24 }
-                            Text { text: "×"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize + 5 }
+                            Text { text: "×"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize + 5; Accessible.ignored: true }
                         }
 
                         Rectangle { width: 34; height: 4; radius: 2; color: window.selectedEvent.color || theme.accent }
@@ -593,6 +702,69 @@ ApplicationWindow {
                                 color: theme.accent
                                 font.pixelSize: theme.baseFontSize
                             }
+                            Text {
+                                visible: !!window.selectedEvent.organizer
+                                         && !!(window.selectedEvent.organizer.displayName || window.selectedEvent.organizer.email)
+                                width: parent.width
+                                text: "Organizer · " + (window.selectedEvent.organizer.displayName
+                                      || window.selectedEvent.organizer.email || "")
+                                color: theme.foregroundMuted
+                                font.pixelSize: theme.baseFontSize
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: window.attendeeNames(window.selectedEvent).length > 0
+                                width: parent.width
+                                text: window.attendeeNames(window.selectedEvent)
+                                color: theme.foreground
+                                font.pixelSize: theme.baseFontSize
+                                wrapMode: Text.WordWrap
+                            }
+                            Text {
+                                visible: window.attendeeSummary(window.selectedEvent).length > 0
+                                width: parent.width
+                                text: window.attendeeSummary(window.selectedEvent)
+                                color: theme.foregroundMuted
+                                font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                                wrapMode: Text.WordWrap
+                            }
+                            Text {
+                                visible: !!window.selectedEvent.canRespond
+                                width: parent.width
+                                text: "Your response · " + (window.selectedEvent.selfResponseStatus === "accepted" ? "Going"
+                                      : window.selectedEvent.selfResponseStatus === "tentative" ? "Maybe"
+                                      : window.selectedEvent.selfResponseStatus === "declined" ? "Not going"
+                                      : "Awaiting response")
+                                color: theme.accent
+                                font.pixelSize: theme.baseFontSize
+                            }
+                            Text {
+                                visible: window.reminderSummary(window.selectedEvent).length > 0
+                                width: parent.width
+                                text: window.reminderSummary(window.selectedEvent)
+                                color: theme.foregroundMuted
+                                font.pixelSize: theme.baseFontSize
+                                wrapMode: Text.WordWrap
+                            }
+                            Text {
+                                visible: !!window.selectedEvent.id
+                                text: (window.selectedEvent.transparency === "transparent" ? "Free" : "Busy")
+                                      + " · " + (window.selectedEvent.visibility === "private" ? "Private"
+                                      : window.selectedEvent.visibility === "public" ? "Public" : "Default visibility")
+                                color: theme.foregroundMuted
+                                font.pixelSize: theme.baseFontSize
+                            }
+                        }
+
+                        Text {
+                            visible: !!window.selectedEvent.description
+                            width: parent.width
+                            text: window.selectedEvent.description || ""
+                            color: theme.foregroundMuted
+                            font.pixelSize: theme.baseFontSize
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 5
+                            elide: Text.ElideRight
                         }
 
                         Text {
@@ -621,6 +793,52 @@ ApplicationWindow {
                         }
 
                         Item { width: 1; height: 4 }
+                        Repeater {
+                            model: window.meetingLinks(window.selectedEvent)
+                            delegate: Column {
+                                required property var modelData
+                                width: parent.width
+                                spacing: 4
+                                CalendarButton {
+                                    width: parent.width
+                                    text: modelData.label || "Join meeting"
+                                    selected: index === 0
+                                    outlined: index > 0
+                                    onClicked: Qt.openUrlExternally(modelData.uri)
+                                }
+                                Text {
+                                    visible: !!modelData.details
+                                    width: parent.width
+                                    text: modelData.details || ""
+                                    color: theme.foregroundMuted
+                                    font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+                        RowLayout {
+                            width: parent.width
+                            visible: !!window.selectedEvent.canRespond
+                            spacing: 6
+                            CalendarButton {
+                                Layout.fillWidth: true
+                                text: "Going"
+                                selected: window.selectedEvent.selfResponseStatus === "accepted"
+                                onClicked: window.respondToInvitation("accepted")
+                            }
+                            CalendarButton {
+                                Layout.fillWidth: true
+                                text: "Maybe"
+                                selected: window.selectedEvent.selfResponseStatus === "tentative"
+                                onClicked: window.respondToInvitation("tentative")
+                            }
+                            CalendarButton {
+                                Layout.fillWidth: true
+                                text: "No"
+                                selected: window.selectedEvent.selfResponseStatus === "declined"
+                                onClicked: window.respondToInvitation("declined")
+                            }
+                        }
                         CalendarButton {
                             width: parent.width
                             text: "Edit event"
@@ -643,8 +861,69 @@ ApplicationWindow {
                             onClicked: window.deleteSelectedEvent()
                         }
                     }
+                    }
                 }
             }
+        }
+    }
+
+    Popup {
+        id: shortcutHelp
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(520, window.width - 36)
+        height: Math.min(560, window.height - 36)
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: theme.panelRadius
+            color: theme.backgroundDeep
+            border.width: 1
+            border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.16)
+        }
+        contentItem: ColumnLayout {
+            Accessible.role: Accessible.Dialog
+            Accessible.name: "Keyboard shortcuts"
+            anchors { fill: parent; margins: 26 }
+            spacing: 14
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Keyboard shortcuts"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 7; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                CalendarButton { text: "Close"; onClicked: shortcutHelp.close() }
+            }
+            Text { text: "Navigate"; color: theme.accent; font.pixelSize: theme.baseFontSize; font.weight: Font.Bold }
+            Repeater {
+                model: [
+                    ["1 / 2 / 3 / 4", "Day / Week / Month / Agenda"], ["T", "Today"],
+                    ["Arrows or J / K", "Move through days and events"], ["Enter", "Open focused day or event"],
+                    ["/", "Search"], ["Ctrl+,", "Settings"]
+                ]
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Text { text: modelData[0]; color: theme.foreground; font.pixelSize: theme.baseFontSize; font.family: "monospace"; Layout.preferredWidth: 170 }
+                    Text { text: modelData[1]; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.10) }
+            Text { text: "Create & edit"; color: theme.accent; font.pixelSize: theme.baseFontSize; font.weight: Font.Bold }
+            Repeater {
+                model: [
+                    ["N", "New event"], ["Ctrl+K", "Quick add"], ["E", "Edit selected event"],
+                    ["Delete", "Delete selected event"], ["Alt+arrows", "Move selected event"],
+                    ["Alt+Shift+↑ / ↓", "Resize selected event"], ["Ctrl+Enter", "Save composer"]
+                ]
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Text { text: modelData[0]; color: theme.foreground; font.pixelSize: theme.baseFontSize; font.family: "monospace"; Layout.preferredWidth: 170 }
+                    Text { text: modelData[1]; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize; Layout.fillWidth: true }
+                }
+            }
+            Item { Layout.fillHeight: true }
+            Text { text: "Press F1 anywhere to reopen this guide."; color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 1) }
         }
     }
 
@@ -758,11 +1037,112 @@ ApplicationWindow {
 
 
     Popup {
+        id: quickEntryPopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(540, window.width - 32)
+        height: 330
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property var interpretation: ({ valid: false, error: "Type an event, date, and time." })
+
+        function openForEntry() {
+            quickEntryField.text = ""
+            interpretation = quickEntry.parse("")
+            open()
+            quickEntryField.forceActiveFocus()
+        }
+
+        function reviewEntry() {
+            if (!interpretation.valid) return
+            let parsed = interpretation
+            close()
+            eventEditor.openFromQuickEntry(parsed)
+        }
+
+        background: Rectangle {
+            radius: 18
+            color: theme.backgroundDeep
+            border.width: 1
+            border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+        }
+
+        ColumnLayout {
+            anchors { fill: parent; margins: 26 }
+            spacing: 14
+            Text {
+                text: "Quick add"
+                color: theme.foreground
+                font.pixelSize: theme.baseFontSize + 10
+                font.weight: Font.DemiBold
+            }
+            Text {
+                text: "Try “Team sync tomorrow 10am for 45m” or “Lunch next Friday noon”."
+                color: theme.foregroundMuted
+                font.pixelSize: theme.baseFontSize
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            ThemedTextField {
+                id: quickEntryField
+                Layout.fillWidth: true
+                placeholderText: "What and when?"
+                font.pixelSize: theme.baseFontSize + 2
+                onTextChanged: quickEntryPopup.interpretation = quickEntry.parse(text)
+                onAccepted: quickEntryPopup.reviewEntry()
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 72
+                radius: 10
+                color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.055)
+                border.width: 1
+                border.color: quickEntryPopup.interpretation.valid
+                              ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.35)
+                              : Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.10)
+                Column {
+                    anchors { fill: parent; margins: 12 }
+                    spacing: 5
+                    Text {
+                        text: quickEntryPopup.interpretation.valid
+                              ? quickEntryPopup.interpretation.title : "Interpretation preview"
+                        color: theme.foreground
+                        font.pixelSize: theme.baseFontSize + 1
+                        font.weight: Font.DemiBold
+                    }
+                    Text {
+                        text: quickEntryPopup.interpretation.valid
+                              ? quickEntryPopup.interpretation.summary
+                              : quickEntryPopup.interpretation.error
+                        color: quickEntryPopup.interpretation.valid ? theme.foregroundMuted : theme.red
+                        font.pixelSize: theme.baseFontSize
+                    }
+                }
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Ctrl+K"; color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 1) }
+                Item { Layout.fillWidth: true }
+                CalendarButton { text: "Cancel"; onClicked: quickEntryPopup.close() }
+                CalendarButton {
+                    text: "Review & create"
+                    selected: true
+                    enabled: quickEntryPopup.interpretation.valid
+                    onClicked: quickEntryPopup.reviewEntry()
+                }
+            }
+        }
+    }
+
+    Popup {
         id: eventEditor
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 470
-        height: Math.min(700, window.height - 28)
+        width: Math.min(560, window.width - 32)
+        height: Math.min(820, window.height - 28)
         modal: true
         focus: true
         padding: 0
@@ -772,6 +1152,11 @@ ApplicationWindow {
         property var writableCalendars: window.calendarList.filter(function(calendar) {
             return calendar.accessRole === "owner" || calendar.accessRole === "writer"
         })
+        property var selectedCalendar: calendarField.currentIndex >= 0
+                                       && calendarField.currentIndex < writableCalendars.length
+                                     ? writableCalendars[calendarField.currentIndex] : ({})
+        property bool selectedCalendarSupportsMeet: (selectedCalendar.allowedConferenceTypes || [])
+                                                   .indexOf("hangoutsMeet") >= 0
         property var timezoneOptions: timeZones.options(Date.now(), preferences.recentTimeZones)
         property var repeatOptions: [
             { label: "Does not repeat" },
@@ -796,6 +1181,13 @@ ApplicationWindow {
         ]
         property bool preferLaterStart: false
         property bool preferLaterEnd: false
+        property bool advancedExpanded: false
+        property var availabilityOptions: [ { label: "Busy", value: "opaque" }, { label: "Free", value: "transparent" } ]
+        property var visibilityOptions: [
+            { label: "Calendar default", value: "default" },
+            { label: "Private", value: "private" },
+            { label: "Public", value: "public" }
+        ]
         property var startResolution: allDayToggle.checked ? ({ valid: true })
             : timeZones.resolveWallTime(dateField.text, startField.text,
                                         selectedTimeZone(), preferLaterStart)
@@ -823,6 +1215,7 @@ ApplicationWindow {
             if (calendarField.currentIndex < 0 || calendarField.currentIndex >= writableCalendars.length)
                 return
             selectTimeZone(writableCalendars[calendarField.currentIndex].timeZone)
+            if (!selectedCalendarSupportsMeet) addMeetToggle.checked = false
         }
 
         function validDateText(value) {
@@ -830,6 +1223,68 @@ ApplicationWindow {
             let parts = value.split("-")
             let date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12)
             return Qt.formatDate(date, "yyyy-MM-dd") === value
+        }
+
+        function indexForValue(options, value) {
+            for (let index = 0; index < options.length; ++index)
+                if (options[index].value === value) return index
+            return 0
+        }
+
+        function attendeesText(attendees) {
+            if (!attendees) return ""
+            return attendees.filter(function(attendee) { return !attendee.self })
+                .map(function(attendee) { return attendee.email || "" })
+                .filter(function(email) { return email.length > 0 }).join(", ")
+        }
+
+        function reminderText(reminders) {
+            if (!reminders || reminders.useDefault) return "default"
+            let overrides = reminders.overrides || []
+            if (!overrides.length) return "none"
+            return overrides.map(function(reminder) {
+                let minutes = Number(reminder.minutes)
+                if (minutes % 10080 === 0) return (minutes / 10080) + "w"
+                if (minutes % 1440 === 0) return (minutes / 1440) + "d"
+                if (minutes % 60 === 0) return (minutes / 60) + "h"
+                return minutes + "m"
+            }).join(", ")
+        }
+
+        function parseAttendees() {
+            let values = guestField.text.split(/[,;\n]+/).map(function(value) { return value.trim().toLowerCase() })
+                .filter(function(value) { return value.length > 0 })
+            let unique = []
+            for (let email of values) {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                    return { valid: false, error: "Check the guest email address: " + email }
+                if (unique.indexOf(email) < 0) unique.push(email)
+            }
+            return { valid: true, items: unique.map(function(email) { return { email: email } }) }
+        }
+
+        function parseReminders() {
+            let value = reminderField.text.trim().toLowerCase()
+            if (value === "default" || value.length === 0)
+                return { valid: true, value: { useDefault: true } }
+            if (value === "none")
+                return { valid: true, value: { useDefault: false, overrides: [] } }
+            let tokens = value.split(",").map(function(token) { return token.trim() })
+                .filter(function(token) { return token.length > 0 })
+            if (tokens.length > 5)
+                return { valid: false, error: "Google supports up to five reminders." }
+            let overrides = []
+            for (let token of tokens) {
+                let match = /^(\d+)\s*(m|h|d|w)$/.exec(token)
+                if (!match)
+                    return { valid: false, error: "Use reminders like 10m, 1h, or 1d." }
+                let factor = match[2] === "w" ? 10080 : match[2] === "d" ? 1440 : match[2] === "h" ? 60 : 1
+                let minutes = Number(match[1]) * factor
+                if (minutes < 0 || minutes > 40320)
+                    return { valid: false, error: "Reminders must be within four weeks of the event." }
+                overrides.push({ method: "popup", minutes: minutes })
+            }
+            return { valid: true, value: { useDefault: false, overrides: overrides } }
         }
 
         function recurrenceRule() {
@@ -869,6 +1324,15 @@ ApplicationWindow {
             titleField.text = ""
             locationField.text = ""
             descriptionField.text = ""
+            guestField.text = ""
+            reminderField.text = "default"
+            availabilityField.currentIndex = 0
+            visibilityField.currentIndex = 0
+            guestsInviteToggle.checked = true
+            guestsModifyToggle.checked = false
+            guestsSeeToggle.checked = true
+            addMeetToggle.checked = false
+            advancedExpanded = false
             allDayToggle.checked = false
             repeatField.currentIndex = 0
             customIntervalField.text = "2"
@@ -888,11 +1352,31 @@ ApplicationWindow {
             titleField.forceActiveFocus()
         }
 
+        function openFromQuickEntry(parsed) {
+            openForDate(new Date(parsed.date + "T12:00:00"))
+            titleField.text = parsed.title
+            dateField.text = parsed.date
+            endDateField.text = parsed.endDate
+            startField.text = parsed.startTime
+            endField.text = parsed.endTime
+            titleField.forceActiveFocus()
+        }
+
         function openForEvent(eventData) {
             editingEvent = eventData
             titleField.text = eventData.title || ""
             locationField.text = eventData.location || ""
             descriptionField.text = eventData.description || ""
+            guestField.text = attendeesText(eventData.attendees)
+            reminderField.text = reminderText(eventData.reminders)
+            availabilityField.currentIndex = indexForValue(availabilityOptions, eventData.transparency || "opaque")
+            visibilityField.currentIndex = indexForValue(visibilityOptions, eventData.visibility || "default")
+            guestsInviteToggle.checked = eventData.guestsCanInviteOthers !== false
+            guestsModifyToggle.checked = !!eventData.guestsCanModify
+            guestsSeeToggle.checked = eventData.guestsCanSeeOtherGuests !== false
+            addMeetToggle.checked = false
+            advancedExpanded = guestField.text.length > 0 || reminderField.text !== "default"
+                    || availabilityField.currentIndex !== 0 || visibilityField.currentIndex !== 0
             let zone = eventData.timeZone || timeZones.systemTimeZoneId
             let start = timeZones.wallTime(eventData.startMs, zone)
             let end = timeZones.wallTime(eventData.endMs, zone)
@@ -963,7 +1447,26 @@ ApplicationWindow {
                 errorText.text = "Occurrences must be between 1 and 999."
                 return
             }
-            let payload = { calendarId: calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: startMs, endMs: endMs, allDay: allDayToggle.checked, timeZone: zone }
+            let guests = parseAttendees()
+            if (!guests.valid) {
+                errorText.text = guests.error
+                return
+            }
+            let reminders = parseReminders()
+            if (!reminders.valid) {
+                errorText.text = reminders.error
+                return
+            }
+            let payload = { calendarId: editing ? editingEvent.calendarId : calendar.id, title: titleField.text.trim(), location: locationField.text.trim(), description: descriptionField.text.trim(), startMs: startMs, endMs: endMs, allDay: allDayToggle.checked, timeZone: zone }
+            payload.attendees = guests.items
+            payload.reminders = reminders.value
+            payload.transparency = availabilityOptions[availabilityField.currentIndex].value
+            payload.visibility = visibilityOptions[visibilityField.currentIndex].value
+            payload.guestsCanInviteOthers = guestsInviteToggle.checked
+            payload.guestsCanModify = guestsModifyToggle.checked
+            payload.guestsCanSeeOtherGuests = guestsSeeToggle.checked
+            if (addMeetToggle.checked)
+                payload.createConference = true
             if (allDayToggle.checked) {
                 payload.allDayStartDate = dateField.text
                 payload.allDayEndDate = allDayEndDate
@@ -973,6 +1476,7 @@ ApplicationWindow {
                 payload.recurrence = [rule]
             if (editing) {
                 payload.id = editingEvent.id
+                payload.targetCalendarId = calendar.id
                 if (editingEvent.isRecurring) {
                     let futureScope = !editingEvent.isSeriesMaster && editScopeField.currentIndex === 1
                     let seriesScope = editingEvent.isSeriesMaster || editScopeField.currentIndex === 2
@@ -1003,7 +1507,8 @@ ApplicationWindow {
             }
             preferences.rememberTimeZone(zone)
             if (editing)
-                window.selectedEvent = Object.assign({}, window.selectedEvent, payload)
+                window.selectedEvent = Object.assign({}, window.selectedEvent, payload,
+                                                     { calendarId: calendar.id })
             close()
             window.refreshFeedMetadata()
         }
@@ -1017,8 +1522,16 @@ ApplicationWindow {
             border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
         }
 
-        ColumnLayout {
-            anchors { fill: parent; margins: 26 }
+        ScrollView {
+            id: editorScroll
+            anchors { fill: parent; margins: 12 }
+            padding: 14
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            ColumnLayout {
+            width: editorScroll.availableWidth
             spacing: 14
             Text { text: eventEditor.editing ? "Edit event" : "New event"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 10; font.weight: Font.DemiBold }
             Text {
@@ -1038,6 +1551,7 @@ ApplicationWindow {
             }
             ThemedComboBox {
                 id: editScopeField
+                accessibleName: "Recurring event edit scope"
                 visible: eventEditor.editing && eventEditor.editingEvent.isRecurring
                          && !eventEditor.editingEvent.isSeriesMaster
                 Layout.fillWidth: true
@@ -1047,11 +1561,25 @@ ApplicationWindow {
             ThemedTextField { id: titleField; Layout.fillWidth: true; placeholderText: "Event title"; font.pixelSize: theme.baseFontSize + 3 }
             ThemedComboBox {
                 id: calendarField
+                accessibleName: "Calendar"
                 Layout.fillWidth: true
                 model: eventEditor.writableCalendars
                 textRole: "name"
-                enabled: !eventEditor.editing
-                onActivated: if (!eventEditor.editing) eventEditor.selectCalendarTimeZone()
+                enabled: !eventEditor.editing || eventEditor.editingEvent.canMove === true
+                onActivated: {
+                    if (!eventEditor.editing) eventEditor.selectCalendarTimeZone()
+                    else if (!eventEditor.selectedCalendarSupportsMeet) addMeetToggle.checked = false
+                }
+            }
+            Text {
+                visible: eventEditor.editing && eventEditor.editingEvent.canMove !== true
+                Layout.fillWidth: true
+                text: eventEditor.editingEvent.isRecurring
+                      ? "Google keeps recurring events on their current calendar."
+                      : "Only the organizer can move a standard Google event between calendars."
+                color: theme.foregroundMuted
+                font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                wrapMode: Text.WordWrap
             }
             CalendarButton {
                 id: allDayToggle
@@ -1062,6 +1590,7 @@ ApplicationWindow {
             }
             ThemedComboBox {
                 id: repeatField
+                accessibleName: "Repeat"
                 visible: !eventEditor.editing
                 Layout.fillWidth: true
                 model: eventEditor.repeatOptions
@@ -1080,6 +1609,7 @@ ApplicationWindow {
                 }
                 ThemedComboBox {
                     id: customUnitField
+                    accessibleName: "Repeat unit"
                     Layout.fillWidth: true
                     model: eventEditor.customUnitOptions
                     textRole: "label"
@@ -1091,6 +1621,7 @@ ApplicationWindow {
                 Text { text: "Ends"; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
                 ThemedComboBox {
                     id: repeatEndField
+                    accessibleName: "Repeat ending"
                     Layout.fillWidth: true
                     model: eventEditor.repeatEndOptions
                     textRole: "label"
@@ -1122,6 +1653,7 @@ ApplicationWindow {
             }
             ThemedComboBox {
                 id: timezoneField
+                accessibleName: "Time zone"
                 visible: !allDayToggle.checked
                 Layout.fillWidth: true
                 model: eventEditor.timezoneOptions
@@ -1193,7 +1725,88 @@ ApplicationWindow {
                 }
             }
             ThemedTextField { id: locationField; Layout.fillWidth: true; placeholderText: "Location (optional)" }
-            ThemedTextArea { id: descriptionField; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Notes (optional)" }
+            CalendarButton {
+                id: addMeetToggle
+                visible: eventEditor.selectedCalendarSupportsMeet
+                         && (!eventEditor.editing
+                             || (!eventEditor.editingEvent.isRecurring
+                                 && window.meetingLinks(eventEditor.editingEvent).length === 0))
+                checkable: true
+                text: checked ? "✓  Add Google Meet" : "Add Google Meet"
+                selected: checked
+                Layout.fillWidth: true
+            }
+            Text {
+                visible: !eventEditor.selectedCalendarSupportsMeet
+                         && calendarField.currentIndex >= 0 && !eventEditor.editing
+                Layout.fillWidth: true
+                text: "Google Meet creation is unavailable for this calendar."
+                color: theme.foregroundMuted
+                font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                wrapMode: Text.WordWrap
+            }
+            CalendarButton {
+                Layout.fillWidth: true
+                text: eventEditor.advancedExpanded ? "Hide guests, reminders & privacy" : "Guests, reminders & privacy"
+                onClicked: eventEditor.advancedExpanded = !eventEditor.advancedExpanded
+            }
+            ColumnLayout {
+                visible: eventEditor.advancedExpanded
+                Layout.fillWidth: true
+                spacing: 10
+                ThemedTextField {
+                    id: guestField
+                    Layout.fillWidth: true
+                    placeholderText: "Guests · name@example.com, teammate@example.com"
+                }
+                ThemedTextField {
+                    id: reminderField
+                    Layout.fillWidth: true
+                    placeholderText: "Reminders · default, none, or 10m, 1h, 1d"
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    ThemedComboBox {
+                        id: availabilityField
+                        accessibleName: "Availability"
+                        Layout.fillWidth: true
+                        model: eventEditor.availabilityOptions
+                        textRole: "label"
+                    }
+                    ThemedComboBox {
+                        id: visibilityField
+                        accessibleName: "Event visibility"
+                        Layout.fillWidth: true
+                        model: eventEditor.visibilityOptions
+                        textRole: "label"
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    CalendarButton {
+                        id: guestsInviteToggle
+                        checkable: true
+                        checked: true
+                        text: checked ? "✓ Invite others" : "Invite others"
+                        selected: checked
+                    }
+                    CalendarButton {
+                        id: guestsModifyToggle
+                        checkable: true
+                        text: checked ? "✓ Modify" : "Modify"
+                        selected: checked
+                    }
+                    CalendarButton {
+                        id: guestsSeeToggle
+                        checkable: true
+                        checked: true
+                        text: checked ? "✓ See guests" : "See guests"
+                        selected: checked
+                    }
+                }
+            }
+            ThemedTextArea { id: descriptionField; Layout.fillWidth: true; Layout.preferredHeight: 110; placeholderText: "Notes (optional)" }
             Text { id: errorText; Layout.fillWidth: true; color: theme.red; font.pixelSize: theme.baseFontSize; wrapMode: Text.WordWrap }
             RowLayout {
                 Layout.fillWidth: true
@@ -1207,6 +1820,7 @@ ApplicationWindow {
                     onClicked: eventEditor.saveEvent()
                 }
             }
+        }
         }
     }
 }

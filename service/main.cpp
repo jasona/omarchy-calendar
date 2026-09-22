@@ -3,6 +3,7 @@
 #include "googleauth.h"
 #include "googlesync.h"
 #include "googlemutations.h"
+#include "../app/version.h"
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -15,7 +16,7 @@ int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omarchy-calendar-service"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral(OMARCHY_CALENDAR_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Omarchy Calendar local data service"));

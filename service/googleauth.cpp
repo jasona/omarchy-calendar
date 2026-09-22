@@ -43,7 +43,6 @@ void GoogleAuth::configure()
     m_oauth->setRequestedScopeTokens({
         QByteArrayLiteral("openid"),
         QByteArrayLiteral("email"),
-        QByteArrayLiteral("profile"),
         QByteArrayLiteral("https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
         QByteArrayLiteral("https://www.googleapis.com/auth/calendar.events")
     });
@@ -160,7 +159,7 @@ void GoogleAuth::finishAuthorization()
         return;
     }
     const QString grantedScopes = QStringLiteral(
-        "openid email profile calendar.calendarlist.readonly calendar.events");
+        "openid email calendar.calendarlist.readonly calendar.events");
     if (!m_database.setAccountGrantedScopes(accountId, grantedScopes)) {
         setError(m_database.lastError());
         return;
@@ -256,7 +255,7 @@ QJsonDocument GoogleAuth::status() const
         { QStringLiteral("authorizationUrl"), m_redirectUrl },
         { QStringLiteral("lastError"), m_lastError },
         { QStringLiteral("tokenStorage"), QStringLiteral("secret-service") },
-        { QStringLiteral("scope"), QStringLiteral("calendar.calendarlist.readonly calendar.events") },
+        { QStringLiteral("scope"), QStringLiteral("openid email calendar.calendarlist.readonly calendar.events") },
         { QStringLiteral("writeAccessAvailable"), m_writeAccess }
     });
 }

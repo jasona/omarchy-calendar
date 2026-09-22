@@ -12,5 +12,6 @@
         <file alias="views/AgendaView.qml">../qml/views/AgendaView.qml</file>
         <file alias="views/SearchView.qml">../qml/views/SearchView.qml</file>
         <file alias="views/SettingsView.qml">../qml/views/SettingsView.qml</file>
+        <file alias="views/OnboardingView.qml">../qml/views/OnboardingView.qml</file>
     </qresource>
 </RCC>

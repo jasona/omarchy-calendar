@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QTimeZone>
 #include <cstdio>
 
 namespace {
@@ -75,6 +76,29 @@ int main(int argc, char **argv)
     if (firstRange.size() != 3 || !containsTitle(firstRange, QStringLiteral("Design review"))
         || !containsTitle(firstRange, QStringLiteral("Conference")))
         return 9;
+    const QJsonArray descriptionSearch = database.searchEvents(QStringLiteral("new calendar"), 20).array();
+    const QJsonArray attendeeSearch = database.searchEvents(QStringLiteral("ada@example.com"), 20).array();
+    const QJsonArray organizerSearch = database.searchEvents(QStringLiteral("organizer:owner@example.com"), 20).array();
+    const QJsonArray responseSearch = database.searchEvents(QStringLiteral("response:accepted"), 20).array();
+    const QJsonArray filteredSearch = database.searchEvents(
+        QStringLiteral("calendar:Primary after:2026-09-20 before:2026-09-21"), 20).array();
+    if (!containsTitle(descriptionSearch,
+                       QStringLiteral("Design review"))
+        || !containsTitle(attendeeSearch,
+                          QStringLiteral("Design review"))
+        || !containsTitle(organizerSearch,
+                          QStringLiteral("Design review"))
+        || !containsTitle(responseSearch,
+                          QStringLiteral("Design review"))
+        || !containsTitle(filteredSearch,
+                          QStringLiteral("Design review")))
+    {
+        std::fprintf(stderr, "search description=%lld attendee=%lld organizer=%lld response=%lld filtered=%lld error=%s\n",
+                     qlonglong(descriptionSearch.size()), qlonglong(attendeeSearch.size()),
+                     qlonglong(organizerSearch.size()), qlonglong(responseSearch.size()),
+                     qlonglong(filteredSearch.size()), qPrintable(database.lastError()));
+        return 29;
+    }
     if (database.syncCursor(accountId, primaryId) != QStringLiteral("sync-token-1"))
         return 10;
     if (database.calendars().array().size() != 2)
@@ -132,7 +156,7 @@ int main(int argc, char **argv)
     });
     const QJsonObject status = database.status().object();
     if (!localEventId.startsWith(QStringLiteral("local:"))
-        || status.value(QStringLiteral("schemaVersion")).toInt() != 7
+        || status.value(QStringLiteral("schemaVersion")).toInt() != 10
         || status.value(QStringLiteral("pendingMutationCount")).toInt() != 1
         || !containsTitle(database.eventsForRange(QStringLiteral("2026-09-21"), QStringLiteral("2026-09-21")).array(),
                           QStringLiteral("Queued planning event"))) {
@@ -149,6 +173,18 @@ int main(int argc, char **argv)
         || queued.value(QStringLiteral("payload")).toObject().value(QStringLiteral("title")).toString()
             != QStringLiteral("Queued planning event"))
         return 27;
+    const QString queuedId = queued.value(QStringLiteral("id")).toString();
+    const QJsonArray visibleQueue = database.pendingMutations().array();
+    if (visibleQueue.size() != 1
+        || visibleQueue.at(0).toObject().value(QStringLiteral("title"))
+               != QStringLiteral("Queued planning event")
+        || !database.setMutationState(queuedId, QStringLiteral("failed"),
+                                      QStringLiteral("fixture failure"), true)
+        || !database.pendingMutations().array().at(0).toObject().value(QStringLiteral("canRetry")).toBool()
+        || !database.retryMutation(queuedId)
+        || database.nextPendingMutation(accountId).object().value(QStringLiteral("state"))
+               != QStringLiteral("queued"))
+        return 30;
     if (!database.completeCreateMutation(queued.value(QStringLiteral("id")).toString(), QJsonObject {
             { QStringLiteral("id"), QStringLiteral("google-created-event") },
             { QStringLiteral("iCalUID"), QStringLiteral("created@example.com") },
@@ -159,6 +195,50 @@ int main(int argc, char **argv)
         || !database.nextPendingMutation(accountId).object().isEmpty()
         || database.status().object().value(QStringLiteral("pendingMutationCount")).toInt() != 0)
         return 28;
+
+    QString deleteMutation = database.deletePendingEvent(primaryId, QStringLiteral("google-created-event"));
+    if (deleteMutation.isEmpty() || !database.finalizePendingDelete(deleteMutation)
+        || database.pendingMutations().array().size() != 1
+        || !database.discardMutation(deleteMutation)
+        || !containsTitle(database.eventsForRange(QStringLiteral("2026-09-21"),
+                                                  QStringLiteral("2026-09-21")).array(),
+                          QStringLiteral("Queued planning event")))
+        return 31;
+
+    const QString discardedCreate = database.createPendingEvent(QJsonObject {
+        { QStringLiteral("calendarId"), primaryId },
+        { QStringLiteral("title"), QStringLiteral("Never upload") },
+        { QStringLiteral("startMs"), QDateTime::fromString(QStringLiteral("2026-09-21T17:00:00Z"), Qt::ISODate).toMSecsSinceEpoch() },
+        { QStringLiteral("endMs"), QDateTime::fromString(QStringLiteral("2026-09-21T18:00:00Z"), Qt::ISODate).toMSecsSinceEpoch() }
+    });
+    const QJsonObject discardedMutation = database.nextPendingMutation(accountId).object();
+    if (discardedCreate.isEmpty() || discardedMutation.isEmpty()
+        || !database.discardMutation(discardedMutation.value(QStringLiteral("id")).toString())
+        || !database.pendingMutations().array().isEmpty()
+        || containsTitle(database.eventsForRange(QStringLiteral("2026-09-21"),
+                                                 QStringLiteral("2026-09-21")).array(),
+                         QStringLiteral("Never upload")))
+        return 32;
+
+    const auto queueFixture = [&](const QString &title, int hour) {
+        return database.createPendingEvent(QJsonObject {
+            { QStringLiteral("calendarId"), primaryId }, { QStringLiteral("title"), title },
+            { QStringLiteral("startMs"), QDateTime(QDate(2026, 9, 22), QTime(hour, 0), QTimeZone::UTC).toMSecsSinceEpoch() },
+            { QStringLiteral("endMs"), QDateTime(QDate(2026, 9, 22), QTime(hour + 1, 0), QTimeZone::UTC).toMSecsSinceEpoch() }
+        });
+    };
+    if (queueFixture(QStringLiteral("First queued"), 9).isEmpty()) return 33;
+    const QString firstQueuedId = database.nextPendingMutation(accountId).object().value("id").toString();
+    if (queueFixture(QStringLiteral("Second queued"), 11).isEmpty()
+        || !database.setMutationState(firstQueuedId, QStringLiteral("failed"), QStringLiteral("stop queue"))
+        || !database.nextPendingMutation(accountId).object().isEmpty()
+        || !database.retryMutation(firstQueuedId)
+        || database.nextPendingMutation(accountId).object().value("id") != firstQueuedId)
+        return 34;
+    if (!database.discardMutation(firstQueuedId)) return 35;
+    const QString secondQueuedId = database.nextPendingMutation(accountId).object().value("id").toString();
+    if (secondQueuedId.isEmpty() || !database.discardMutation(secondQueuedId)
+        || !database.pendingMutations().array().isEmpty()) return 36;
     if (!database.removeAccount(accountId))
         return 14;
     if (!database.accounts().array().isEmpty()

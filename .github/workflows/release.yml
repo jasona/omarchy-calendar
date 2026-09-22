@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 40
+    env:
+      OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      OMARCHY_CALENDAR_HOMEPAGE_URL: https://lastrefuge.ai/projects/omarchy-calendar
+      OMARCHY_CALENDAR_PRIVACY_URL: https://lastrefuge.ai/privacy
+      OMARCHY_CALENDAR_TERMS_URL: https://lastrefuge.ai/terms
+      OMARCHY_CALENDAR_SUPPORT_EMAIL: jason@greatspark.com
+    steps:
+      - name: Install release dependencies
+        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git github-cli jq libsecret ninja qt6-base qt6-declarative qt6-networkauth
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag and release metadata
+        run: ./tests/test-release-metadata.sh
+      - name: Configure production OAuth credentials
+        run: |
+          test -n "$OAUTH_CLIENT_ID"
+          test -n "$OAUTH_CLIENT_SECRET"
+          umask 077
+          printf 'OMARCHY_CALENDAR_GOOGLE_CLIENT_ID=%s\nOMARCHY_CALENDAR_GOOGLE_CLIENT_SECRET=%s\n' \
+            "$OAUTH_CLIENT_ID" "$OAUTH_CLIENT_SECRET" > packaging/google-oauth.env
+      - name: Verify production install
+        run: ./tests/test-package-install.sh
+      - name: Build integration service
+        run: >-
+          cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DOMARCHY_CALENDAR_HOMEPAGE_URL="$OMARCHY_CALENDAR_HOMEPAGE_URL"
+          -DOMARCHY_CALENDAR_PRIVACY_URL="$OMARCHY_CALENDAR_PRIVACY_URL"
+          -DOMARCHY_CALENDAR_TERMS_URL="$OMARCHY_CALENDAR_TERMS_URL"
+          -DOMARCHY_CALENDAR_SUPPORT_EMAIL="$OMARCHY_CALENDAR_SUPPORT_EMAIL"
+          && cmake --build build-release
+      - name: Run contracts
+        run: ./tests/run-contract-tests.sh "$PWD/build-release/omarchy-calendar-service"
+      - name: Build Arch package and source archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- bash -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg --noconfirm --cleanbuild"
+          mkdir -p dist
+          cp packaging/arch/omarchy-calendar-*.pkg.tar.zst dist/
+          git archive --format=tar.gz --prefix="omarchy-calendar-$version/" \
+            --output="dist/omarchy-calendar-$version.tar.gz" "$GITHUB_REF_NAME"
+          cd dist
+          sha256sum * > SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag

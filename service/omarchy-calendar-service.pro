@@ -2,6 +2,7 @@ QT += core dbus network networkauth sql
 QT -= gui
 CONFIG += console c++20
 CONFIG -= app_bundle
+DEFINES += OMARCHY_CALENDAR_VERSION=\\\"0.9.0\\\"
 
 TARGET = omarchy-calendar-service
 SOURCES += \

@@ -21,6 +21,14 @@ public:
     QJsonDocument accounts() const;
     QJsonDocument nextEvent() const;
     QJsonDocument status() const;
+    QJsonDocument pendingMutations() const;
+    QJsonDocument takeNewInvitations();
+    QJsonDocument dueReminders(qint64 nowMs) const;
+    bool markReminderDelivered(const QString &reminderId, uint notificationId);
+    bool snoozeReminder(const QString &reminderId, qint64 untilMs);
+    bool dismissReminder(const QString &reminderId);
+    QString reminderIdForNotification(uint notificationId) const;
+    bool pruneReminderDeliveries(qint64 beforeStartMs);
 
     bool upsertAccount(const QString &id, const QString &provider,
                        const QString &providerAccountId, const QString &displayName,
@@ -33,6 +41,8 @@ public:
     bool setCalendarSelected(const QString &calendarId, bool selected);
     QString createPendingEvent(const QJsonObject &event);
     bool updatePendingEvent(const QJsonObject &event);
+    bool respondPendingEvent(const QString &calendarId, const QString &eventId,
+                             const QString &responseStatus);
     QString deletePendingEvent(const QString &calendarId, const QString &eventId);
     QString deletePendingEvent(const QJsonObject &event);
     bool undoPendingDelete(const QString &mutationId);
@@ -41,9 +51,13 @@ public:
     QJsonDocument nextPendingMutation(const QString &accountId) const;
     bool setMutationState(const QString &mutationId, const QString &state,
                           const QString &error = {}, bool incrementAttempt = false);
+    bool retryMutation(const QString &mutationId);
+    bool discardMutation(const QString &mutationId);
     bool completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool rebaseUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
+    bool rebaseRsvpMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool completeUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent);
+    bool completeMoveMutation(const QString &mutationId, const QJsonObject &remoteEvent);
     bool completeDeleteMutation(const QString &mutationId);
     bool removeAccount(const QString &id);
     bool setSyncCursor(const QString &accountId, const QString &calendarId,

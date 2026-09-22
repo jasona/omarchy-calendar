@@ -4,6 +4,9 @@
 #include <QFile>
 #include <QRegularExpression>
 
+#include <algorithm>
+#include <cmath>
+
 namespace {
 QString readFile(const QString &path)
 {
@@ -11,6 +14,32 @@ QString readFile(const QString &path)
     return file.open(QIODevice::ReadOnly | QIODevice::Text)
         ? QString::fromUtf8(file.readAll())
         : QString();
+}
+
+double relativeLuminance(const QColor &color)
+{
+    const auto channel = [](double value) {
+        value /= 255.0;
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(color.red()) + 0.7152 * channel(color.green())
+        + 0.0722 * channel(color.blue());
+}
+
+double contrastRatio(const QColor &first, const QColor &second)
+{
+    const double a = relativeLuminance(first);
+    const double b = relativeLuminance(second);
+    return (std::max(a, b) + 0.05) / (std::min(a, b) + 0.05);
+}
+
+QColor ensureContrast(QColor candidate, const QColor &background, double minimum)
+{
+    const bool darkBackground = relativeLuminance(background) < 0.35;
+    for (int attempt = 0; attempt < 18 && contrastRatio(candidate, background) < minimum; ++attempt)
+        candidate = darkBackground ? candidate.lighter(108) : candidate.darker(108);
+    if (contrastRatio(candidate, background) >= minimum) return candidate;
+    return darkBackground ? QColor(Qt::white) : QColor(Qt::black);
 }
 }
 
@@ -71,8 +100,13 @@ void ThemeProvider::reload()
     m_red = readColor(colors, QStringLiteral("red"), m_red);
     m_green = readColor(colors, QStringLiteral("green"), m_green);
     m_cyan = readColor(colors, QStringLiteral("cyan"), m_cyan);
-    m_baseFontSize = readInteger(userShell, QStringLiteral("base-size"),
-                                 readInteger(themeShell, QStringLiteral("base-size"), 12));
+    m_foreground = ensureContrast(m_foreground, m_background, 7.0);
+    m_foregroundMuted = ensureContrast(m_foregroundMuted, m_background, 4.5);
+    m_accent = ensureContrast(m_accent, m_background, 4.5);
+    m_red = ensureContrast(m_red, m_background, 4.5);
+    m_green = ensureContrast(m_green, m_background, 4.5);
+    m_baseFontSize = qBound(10, readInteger(userShell, QStringLiteral("base-size"),
+                                 readInteger(themeShell, QStringLiteral("base-size"), 12)), 20);
 
     watch(colorsPath);
     watch(themeShellPath);

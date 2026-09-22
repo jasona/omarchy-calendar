@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <QDateTime>
+#include <QClipboard>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusReply>
@@ -9,6 +10,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QGuiApplication>
 #include <QMap>
 #include <QSet>
 
@@ -75,6 +77,15 @@ void EventStore::forwardProviderStatusChanged()
 bool EventStore::serviceBacked() const
 {
     return m_service && m_service->isValid();
+}
+
+bool EventStore::copyDiagnostics() const
+{
+    if (!serviceBacked()) return false;
+    const QDBusReply<QString> reply = m_service->call(QStringLiteral("GetDiagnostics"));
+    if (!reply.isValid() || reply.value().isEmpty()) return false;
+    QGuiApplication::clipboard()->setText(reply.value());
+    return true;
 }
 
 void EventStore::ensureWatching()
@@ -251,6 +262,7 @@ QVariantList EventStore::searchEvents(const QString &queryText, int limit) const
     for (const auto &event : m_events) {
         const auto converted = toVariant(event);
         if (converted.value(QStringLiteral("title")).toString().contains(needle, Qt::CaseInsensitive)
+            || converted.value(QStringLiteral("description")).toString().contains(needle, Qt::CaseInsensitive)
             || converted.value(QStringLiteral("location")).toString().contains(needle, Qt::CaseInsensitive)
             || converted.value(QStringLiteral("calendarName")).toString().contains(needle, Qt::CaseInsensitive)) {
             result.append(converted);
@@ -290,6 +302,11 @@ QVariantList EventStore::accounts() const
 QVariantMap EventStore::providerStatus() const
 {
     return serviceObject(QStringLiteral("GetProviderStatus"));
+}
+
+QVariantList EventStore::pendingMutations() const
+{
+    return serviceArray(QStringLiteral("GetPendingMutations"));
 }
 
 bool EventStore::beginGoogleAuthorization() const
@@ -336,6 +353,15 @@ bool EventStore::updateEvent(const QVariantMap &event) const
     return reply.isValid() && reply.value();
 }
 
+bool EventStore::respondToInvitation(const QString &calendarId, const QString &eventId,
+                                     const QString &responseStatus) const
+{
+    if (!serviceBacked()) return false;
+    const QDBusReply<bool> reply = m_service->call(
+        QStringLiteral("RespondToInvitation"), calendarId, eventId, responseStatus);
+    return reply.isValid() && reply.value();
+}
+
 QString EventStore::deleteEvent(const QString &calendarId, const QString &eventId) const
 {
     if (!serviceBacked()) return {};
@@ -357,6 +383,20 @@ bool EventStore::undoDelete(const QString &mutationId) const
 {
     if (!serviceBacked()) return false;
     const QDBusReply<bool> reply = m_service->call(QStringLiteral("UndoDelete"), mutationId);
+    return reply.isValid() && reply.value();
+}
+
+bool EventStore::retryMutation(const QString &mutationId) const
+{
+    if (!serviceBacked()) return false;
+    const QDBusReply<bool> reply = m_service->call(QStringLiteral("RetryMutation"), mutationId);
+    return reply.isValid() && reply.value();
+}
+
+bool EventStore::discardMutation(const QString &mutationId) const
+{
+    if (!serviceBacked()) return false;
+    const QDBusReply<bool> reply = m_service->call(QStringLiteral("DiscardMutation"), mutationId);
     return reply.isValid() && reply.value();
 }
 

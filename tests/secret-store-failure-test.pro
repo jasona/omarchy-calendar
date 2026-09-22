@@ -1,0 +1,9 @@
+QT += core
+QT -= gui
+CONFIG += console c++20 link_pkgconfig
+CONFIG -= app_bundle
+TARGET = secret-store-failure-test
+INCLUDEPATH += ../service
+SOURCES += secret-store-failure-test.cpp ../service/secretstore.cpp
+HEADERS += ../service/secretstore.h
+PKGCONFIG += libsecret-1

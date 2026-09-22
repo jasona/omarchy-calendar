@@ -1,3 +1,4 @@
 [D-BUS Service]
 Name=org.omarchy.Calendar
 Exec=/usr/bin/omarchy-calendar-service
+SystemdService=omarchy-calendar.service

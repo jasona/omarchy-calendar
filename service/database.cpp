@@ -7,17 +7,123 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QUuid>
 #include <QTimeZone>
+#include <QUrl>
 
 namespace {
+QJsonArray meetingLinks(const QJsonObject &raw)
+{
+    QJsonArray result;
+    QSet<QString> seen;
+    const auto append = [&](const QString &uri, const QString &kind, const QString &label,
+                            const QString &details = QString()) {
+        const QString normalized = uri.trimmed();
+        if (normalized.isEmpty() || seen.contains(normalized)) return;
+        seen.insert(normalized);
+        QJsonObject item {
+            { QStringLiteral("uri"), normalized },
+            { QStringLiteral("kind"), kind },
+            { QStringLiteral("label"), label }
+        };
+        if (!details.isEmpty()) item.insert(QStringLiteral("details"), details);
+        result.append(item);
+    };
+
+    append(raw.value(QStringLiteral("hangoutLink")).toString(),
+           QStringLiteral("google-meet"), QStringLiteral("Join Google Meet"));
+    for (const QJsonValue &value : raw.value(QStringLiteral("conferenceData")).toObject()
+                                      .value(QStringLiteral("entryPoints")).toArray()) {
+        const QJsonObject entry = value.toObject();
+        const QString uri = entry.value(QStringLiteral("uri")).toString();
+        const QString type = entry.value(QStringLiteral("entryPointType")).toString();
+        QStringList details;
+        const QStringList detailFields { QStringLiteral("pin"), QStringLiteral("accessCode"),
+                                         QStringLiteral("meetingCode"), QStringLiteral("passcode") };
+        for (const QString &field : detailFields) {
+            const QString detail = entry.value(field).toString();
+            if (!detail.isEmpty()) details.append(field == QStringLiteral("pin")
+                ? QStringLiteral("PIN %1").arg(detail)
+                : QStringLiteral("Code %1").arg(detail));
+        }
+        if (type == QStringLiteral("phone")) {
+            const QString phoneLabel = entry.value(QStringLiteral("label")).toString();
+            append(uri, QStringLiteral("phone"), phoneLabel.isEmpty()
+                       ? QStringLiteral("Call meeting") : QStringLiteral("Call %1").arg(phoneLabel),
+                   details.join(QStringLiteral(" · ")));
+        } else if (type == QStringLiteral("sip")) {
+            append(uri, QStringLiteral("sip"), QStringLiteral("Join by SIP"),
+                   details.join(QStringLiteral(" · ")));
+        } else if (type == QStringLiteral("more")) {
+            append(uri, QStringLiteral("more"), QStringLiteral("More joining options"),
+                   details.join(QStringLiteral(" · ")));
+        } else {
+            const QString host = QUrl(uri).host().toLower();
+            const QString kind = host.contains(QStringLiteral("zoom.")) ? QStringLiteral("zoom")
+                : host.contains(QStringLiteral("teams.")) ? QStringLiteral("teams")
+                : host == QStringLiteral("meet.google.com") ? QStringLiteral("google-meet")
+                : QStringLiteral("video");
+            const QString label = kind == QStringLiteral("zoom") ? QStringLiteral("Join Zoom")
+                : kind == QStringLiteral("teams") ? QStringLiteral("Join Microsoft Teams")
+                : kind == QStringLiteral("google-meet") ? QStringLiteral("Join Google Meet")
+                : QStringLiteral("Join meeting");
+            append(uri, kind, label, details.join(QStringLiteral(" · ")));
+        }
+    }
+
+    const QRegularExpression urlPattern(QStringLiteral("https?://[^\\s<>\\\"']+"),
+                                        QRegularExpression::CaseInsensitiveOption);
+    const QString searchable = raw.value(QStringLiteral("description")).toString() + QLatin1Char(' ')
+        + raw.value(QStringLiteral("location")).toString();
+    auto urls = urlPattern.globalMatch(searchable);
+    while (urls.hasNext()) {
+        QString uri = urls.next().captured();
+        while (!uri.isEmpty() && QStringLiteral(".,;:!?)").contains(uri.back())) uri.chop(1);
+        const QString host = QUrl(uri).host().toLower();
+        if (host == QStringLiteral("meet.google.com"))
+            append(uri, QStringLiteral("google-meet"), QStringLiteral("Join Google Meet"));
+        else if (host.contains(QStringLiteral("zoom.")))
+            append(uri, QStringLiteral("zoom"), QStringLiteral("Join Zoom"));
+        else if (host == QStringLiteral("teams.microsoft.com") || host == QStringLiteral("teams.live.com"))
+            append(uri, QStringLiteral("teams"), QStringLiteral("Join Microsoft Teams"));
+    }
+    return result;
+}
+
 QJsonObject eventFromQuery(const QSqlQuery &query)
 {
-    return {
+    const QJsonObject raw = QJsonDocument::fromJson(
+        query.value(QStringLiteral("display_json")).toByteArray()).object();
+    const QJsonObject organizer = raw.value(QStringLiteral("organizer")).toObject();
+    const QJsonObject creator = raw.value(QStringLiteral("creator")).toObject();
+    const QJsonArray attendees = raw.value(QStringLiteral("attendees")).toArray();
+    const QJsonObject reminders = raw.contains(QStringLiteral("reminders"))
+        ? raw.value(QStringLiteral("reminders")).toObject()
+        : QJsonObject { { QStringLiteral("useDefault"), true } };
+    const bool guestsCanModify = raw.value(QStringLiteral("guestsCanModify")).toBool(false);
+    const bool recurring = !query.value(QStringLiteral("recurring_event_id")).toString().isEmpty()
+        || !query.value(QStringLiteral("recurrence_json")).toString().isEmpty();
+    const bool canModify = !raw.value(QStringLiteral("locked")).toBool(false)
+        && (organizer.isEmpty() || organizer.value(QStringLiteral("self")).toBool(false)
+            || guestsCanModify);
+    const QString eventType = raw.value(QStringLiteral("eventType")).toString(QStringLiteral("default"));
+    QString selfResponse;
+    bool hasSelfAttendee = false;
+    for (const QJsonValue &value : attendees) {
+        const QJsonObject attendee = value.toObject();
+        if (attendee.value(QStringLiteral("self")).toBool()) {
+            hasSelfAttendee = true;
+            selfResponse = attendee.value(QStringLiteral("responseStatus")).toString();
+            break;
+        }
+    }
+    const QString storedTransparency = query.value(QStringLiteral("transparency")).toString();
+    QJsonObject result {
         { QStringLiteral("id"), query.value(QStringLiteral("provider_event_id")).toString() },
         { QStringLiteral("calendarId"), query.value(QStringLiteral("calendar_id")).toString() },
         { QStringLiteral("calendarName"), query.value(QStringLiteral("calendar_name")).toString() },
@@ -41,12 +147,35 @@ QJsonObject eventFromQuery(const QSqlQuery &query)
         { QStringLiteral("isSeriesMaster"), !query.value(QStringLiteral("recurrence_json")).toString().isEmpty()
             && query.value(QStringLiteral("original_start_ms")).toLongLong() == 0
             && query.value(QStringLiteral("original_start_date")).toString().isEmpty() },
-        { QStringLiteral("isRecurring"), !query.value(QStringLiteral("recurring_event_id")).toString().isEmpty()
-            || !query.value(QStringLiteral("recurrence_json")).toString().isEmpty() },
+        { QStringLiteral("isRecurring"), recurring },
         { QStringLiteral("etag"), query.value(QStringLiteral("etag")).toString() },
         { QStringLiteral("source"), query.value(QStringLiteral("source")).toString() },
-        { QStringLiteral("multiDay"), query.value(QStringLiteral("day_count")).toInt() > 1 }
+        { QStringLiteral("multiDay"), query.value(QStringLiteral("day_count")).toInt() > 1 },
+        { QStringLiteral("attendees"), attendees },
+        { QStringLiteral("organizer"), organizer },
+        { QStringLiteral("creator"), creator },
+        { QStringLiteral("reminders"), reminders },
+        { QStringLiteral("visibility"), raw.value(QStringLiteral("visibility")).toString(QStringLiteral("default")) },
+        { QStringLiteral("transparency"), raw.value(QStringLiteral("transparency")).toString(
+            storedTransparency.isEmpty() ? QStringLiteral("opaque") : storedTransparency) },
+        { QStringLiteral("guestsCanInviteOthers"), raw.value(QStringLiteral("guestsCanInviteOthers")).toBool(true) },
+        { QStringLiteral("guestsCanModify"), guestsCanModify },
+        { QStringLiteral("guestsCanSeeOtherGuests"), raw.value(QStringLiteral("guestsCanSeeOtherGuests")).toBool(true) },
+        { QStringLiteral("hangoutLink"), raw.value(QStringLiteral("hangoutLink")).toString() },
+        { QStringLiteral("conferenceData"), raw.value(QStringLiteral("conferenceData")) },
+        { QStringLiteral("meetingLinks"), meetingLinks(raw) },
+        { QStringLiteral("attachments"), raw.value(QStringLiteral("attachments")) },
+        { QStringLiteral("eventType"), eventType },
+        { QStringLiteral("locked"), raw.value(QStringLiteral("locked")).toBool(false) },
+        { QStringLiteral("canModify"), canModify },
+        { QStringLiteral("canMove"), canModify && !recurring
+            && (eventType.isEmpty() || eventType == QStringLiteral("default"))
+            && (organizer.isEmpty() || organizer.value(QStringLiteral("self")).toBool(false)) },
+        { QStringLiteral("canRespond"), hasSelfAttendee
+            && !organizer.value(QStringLiteral("self")).toBool(false) },
+        { QStringLiteral("selfResponseStatus"), selfResponse }
     };
+    return result;
 }
 
 QString googleCalendarId(const QString &accountId, const QString &providerCalendarId)
@@ -377,6 +506,87 @@ bool Database::migrate()
         }
     }
 
+    QSqlQuery versionEight(m_database);
+    if (!versionEight.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=8"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionEight.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionEight.next()) {
+        const QStringList versionEightStatements {
+            QStringLiteral(
+                "CREATE TABLE invitation_notifications (calendar_id TEXT NOT NULL,event_id TEXT NOT NULL,"
+                "response_status TEXT NOT NULL,notified_at TEXT NOT NULL,PRIMARY KEY(calendar_id,event_id),"
+                "FOREIGN KEY(calendar_id) REFERENCES calendars(id) ON DELETE CASCADE)"),
+            QStringLiteral(
+                "INSERT OR IGNORE INTO invitation_notifications(calendar_id,event_id,response_status,notified_at) "
+                "SELECT calendar_id,provider_event_id,'needsAction',strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                "FROM events e WHERE json_valid(e.raw_json) AND EXISTS (SELECT 1 FROM json_each(e.raw_json,'$.attendees') "
+                "WHERE json_extract(value,'$.self')=1 AND json_extract(value,'$.responseStatus')='needsAction')"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionEightStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
+    QSqlQuery versionNine(m_database);
+    if (!versionNine.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=9"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionNine.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionNine.next()) {
+        const QStringList versionNineStatements {
+            QStringLiteral("ALTER TABLE calendars ADD COLUMN allowed_conference_types TEXT NOT NULL DEFAULT '[]'"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(9, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionNineStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
+    QSqlQuery versionTen(m_database);
+    if (!versionTen.exec(QStringLiteral("SELECT 1 FROM schema_migrations WHERE version=10"))) {
+        setError(QStringLiteral("Migration version could not be checked"), versionTen.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    if (!versionTen.next()) {
+        const QStringList versionTenStatements {
+            QStringLiteral("ALTER TABLE calendars ADD COLUMN default_reminders TEXT NOT NULL DEFAULT '[]'"),
+            QStringLiteral(
+                "CREATE TABLE reminder_deliveries (id TEXT PRIMARY KEY,calendar_id TEXT NOT NULL,"
+                "event_id TEXT NOT NULL,start_ms INTEGER NOT NULL,minutes INTEGER NOT NULL,"
+                "scheduled_ms INTEGER NOT NULL,state TEXT NOT NULL DEFAULT 'pending',"
+                "notification_id INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL,"
+                "FOREIGN KEY(calendar_id) REFERENCES calendars(id) ON DELETE CASCADE)"),
+            QStringLiteral("CREATE INDEX reminder_deliveries_due_idx ON reminder_deliveries(state,scheduled_ms)"),
+            QStringLiteral(
+                "INSERT OR REPLACE INTO metadata(key,value) VALUES('reminder_scheduler_initialized_ms',"
+                "CAST(strftime('%s','now') AS INTEGER)*1000)"),
+            QStringLiteral(
+                "INSERT INTO schema_migrations(version, applied_at) "
+                "VALUES(10, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+        };
+        for (const auto &statement : versionTenStatements) {
+            if (!execute(statement)) {
+                m_database.rollback();
+                return false;
+            }
+        }
+    }
+
     if (!m_database.commit()) {
         setError(QStringLiteral("Migration transaction could not commit"), m_database.lastError().text());
         return false;
@@ -593,7 +803,10 @@ QJsonDocument Database::eventsForRange(const QString &firstDate, const QString &
     QSqlQuery query(m_database);
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
-        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
+        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url,"
+        "COALESCE((SELECT p.payload_json FROM pending_mutations p WHERE p.calendar_id=e.calendar_id "
+        "AND p.provider_event_id=e.provider_event_id AND p.operation IN ('update','update-series','update-future','rsvp') "
+        "ORDER BY p.created_at DESC LIMIT 1),e.raw_json) AS display_json,e.transparency, "
         "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "e.recurring_event_id,e.original_start_ms,e.original_start_date,e.recurrence_json,e.is_exception, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "
@@ -619,7 +832,7 @@ QJsonDocument Database::calendars() const
     QJsonArray calendars;
     QSqlQuery query(QStringLiteral(
         "SELECT id, name, color, source, account_id, provider_calendar_id, "
-        "time_zone, access_role, selected FROM calendars "
+        "time_zone, access_role, selected, allowed_conference_types FROM calendars "
         "WHERE source!='compat-json' OR NOT EXISTS ("
         "SELECT 1 FROM accounts WHERE provider='google' AND last_sync_at!='') "
         "ORDER BY name"), m_database);
@@ -633,7 +846,9 @@ QJsonDocument Database::calendars() const
             { QStringLiteral("providerCalendarId"), query.value(5).toString() },
             { QStringLiteral("timeZone"), query.value(6).toString() },
             { QStringLiteral("accessRole"), query.value(7).toString() },
-            { QStringLiteral("selected"), query.value(8).toBool() }
+            { QStringLiteral("selected"), query.value(8).toBool() },
+            { QStringLiteral("allowedConferenceTypes"),
+              QJsonDocument::fromJson(query.value(9).toByteArray()).array() }
         });
     }
     return QJsonDocument(calendars);
@@ -782,11 +997,18 @@ QString Database::createPendingEvent(const QJsonObject &event)
         return {};
     }
     QSqlQuery calendar(m_database);
-    calendar.prepare("SELECT account_id,time_zone,access_role FROM calendars WHERE id=? AND source='google'");
+    calendar.prepare("SELECT account_id,time_zone,access_role,allowed_conference_types FROM calendars WHERE id=? AND source='google'");
     calendar.addBindValue(calendarId);
     if (!calendar.exec() || !calendar.next()
         || (calendar.value(2).toString() != "owner" && calendar.value(2).toString() != "writer")) {
         setError("Event could not be created", "calendar is unavailable or read-only");
+        return {};
+    }
+    if (event.value(QStringLiteral("createConference")).toBool()
+        && !QJsonDocument::fromJson(calendar.value(3).toByteArray()).array()
+                .contains(QStringLiteral("hangoutsMeet"))) {
+        setError(QStringLiteral("Event could not be created"),
+                 QStringLiteral("this calendar does not support Google Meet creation"));
         return {};
     }
     QTimeZone zone(event.value("timeZone").toString(calendar.value(1).toString()).toUtf8());
@@ -819,10 +1041,13 @@ QString Database::createPendingEvent(const QJsonObject &event)
     payload.insert("googleEventId", QString::fromLatin1(
         QCryptographicHash::hash(eventId.toUtf8(), QCryptographicHash::Sha256).toHex().left(32)));
     payload.insert("timeZone", QString::fromUtf8(zone.id()));
+    if (payload.value(QStringLiteral("createConference")).toBool())
+        payload.insert(QStringLiteral("conferenceRequestId"),
+                       QUuid::createUuid().toString(QUuid::WithoutBraces));
     const QString json = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
     if (!m_database.transaction()) return {};
     QSqlQuery row(m_database);
-    row.prepare("INSERT INTO events(provider_event_id,date_key,calendar_id,start_ms,end_ms,all_day,title,description,location,time_zone,status,transparency,raw_json,source,all_day_start_date,all_day_end_date,recurring_event_id,recurrence_json) VALUES(?,?,?,?,?,?,?,?,?,?,'confirmed','opaque',?,'local-pending',?,?,?,?)");
+    row.prepare("INSERT INTO events(provider_event_id,date_key,calendar_id,start_ms,end_ms,all_day,title,description,location,time_zone,status,transparency,raw_json,source,all_day_start_date,all_day_end_date,recurring_event_id,recurrence_json) VALUES(?,?,?,?,?,?,?,?,?,?,'confirmed',?,?,'local-pending',?,?,?,?)");
     bool rowsStored = true;
     for (QDate date = firstDate; date <= lastDate; date = date.addDays(1)) {
         int column = 0;
@@ -832,7 +1057,9 @@ QString Database::createPendingEvent(const QJsonObject &event)
         row.bindValue(column++, allDay ? 1 : 0); row.bindValue(column++, title);
         row.bindValue(column++, event.value("description").toString(QStringLiteral("")));
         row.bindValue(column++, event.value("location").toString(QStringLiteral("")));
-        row.bindValue(column++, QString::fromUtf8(zone.id())); row.bindValue(column++, json);
+        row.bindValue(column++, QString::fromUtf8(zone.id()));
+        row.bindValue(column++, event.value(QStringLiteral("transparency")).toString(QStringLiteral("opaque")));
+        row.bindValue(column++, json);
         row.bindValue(column++, allDayStart); row.bindValue(column++, allDayEnd);
         row.bindValue(column++, recurrence.isEmpty() ? QStringLiteral("") : eventId);
         row.bindValue(column++, recurrenceJson);
@@ -885,14 +1112,79 @@ bool Database::updatePendingEvent(const QJsonObject &event)
         return false;
     }
 
+    if (event.value(QStringLiteral("createConference")).toBool()) {
+        QSqlQuery conferenceCalendar(m_database);
+        conferenceCalendar.prepare(QStringLiteral(
+            "SELECT allowed_conference_types FROM calendars WHERE id=? LIMIT 1"));
+        conferenceCalendar.addBindValue(event.value(QStringLiteral("targetCalendarId")).toString(calendarId));
+        if (!conferenceCalendar.exec() || !conferenceCalendar.next()
+            || !QJsonDocument::fromJson(conferenceCalendar.value(0).toByteArray()).array()
+                    .contains(QStringLiteral("hangoutsMeet"))) {
+            setError(QStringLiteral("Event could not be updated"),
+                     QStringLiteral("this calendar does not support Google Meet creation"));
+            return false;
+        }
+    }
+
+    const QJsonObject storedEvent = QJsonDocument::fromJson(existing.value(10).toByteArray()).object();
+    const QString targetCalendarId = event.value(QStringLiteral("targetCalendarId")).toString(calendarId);
+    const bool calendarMove = targetCalendarId != calendarId;
+    QString targetProviderCalendarId;
+    if (calendarMove) {
+        const QJsonObject organizer = storedEvent.value(QStringLiteral("organizer")).toObject();
+        const QString eventType = storedEvent.value(QStringLiteral("eventType")).toString(QStringLiteral("default"));
+        if (!existing.value(11).toString().isEmpty() || !existing.value(14).toString().isEmpty()
+            || (!eventType.isEmpty() && eventType != QStringLiteral("default"))
+            || (!organizer.isEmpty() && !organizer.value(QStringLiteral("self")).toBool(false))) {
+            setError(QStringLiteral("Event could not be moved"),
+                     QStringLiteral("Google only allows the organizer to move a standard, non-recurring event"));
+            return false;
+        }
+        QSqlQuery target(m_database);
+        target.prepare(QStringLiteral(
+            "SELECT provider_calendar_id,access_role FROM calendars "
+            "WHERE id=? AND account_id=? AND source='google' LIMIT 1"));
+        target.addBindValue(targetCalendarId);
+        target.addBindValue(existing.value(0).toString());
+        if (!target.exec() || !target.next()
+            || (target.value(1).toString() != QStringLiteral("owner")
+                && target.value(1).toString() != QStringLiteral("writer"))) {
+            setError(QStringLiteral("Event could not be moved"),
+                     QStringLiteral("destination calendar is unavailable, read-only, or belongs to another account"));
+            return false;
+        }
+        targetProviderCalendarId = target.value(0).toString();
+    }
+
     QTimeZone zone(event.value(QStringLiteral("timeZone")).toString(existing.value(1).toString()).toUtf8());
     if (!zone.isValid()) zone = QTimeZone::systemTimeZone();
     QJsonObject payload = event;
+    payload.insert(QStringLiteral("calendarId"), calendarId);
+    if (calendarMove) {
+        payload.insert(QStringLiteral("targetCalendarId"), targetCalendarId);
+        payload.insert(QStringLiteral("targetProviderCalendarId"), targetProviderCalendarId);
+    }
     payload.insert(QStringLiteral("timeZone"), QString::fromUtf8(zone.id()));
+    if (payload.value(QStringLiteral("createConference")).toBool()
+        && payload.value(QStringLiteral("conferenceRequestId")).toString().isEmpty())
+        payload.insert(QStringLiteral("conferenceRequestId"),
+                       QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QStringList preservedFields {
+        QStringLiteral("attendees"), QStringLiteral("reminders"),
+        QStringLiteral("visibility"), QStringLiteral("transparency"),
+        QStringLiteral("guestsCanInviteOthers"), QStringLiteral("guestsCanModify"),
+        QStringLiteral("guestsCanSeeOtherGuests"), QStringLiteral("createConference"),
+        QStringLiteral("conferenceRequestId")
+    };
+    for (const QString &field : preservedFields) {
+        if (!payload.contains(field) && storedEvent.contains(field))
+            payload.insert(field, storedEvent.value(field));
+    }
     const QString editScope = event.value(QStringLiteral("scope")).toString();
     const bool seriesScope = (editScope == QStringLiteral("series") || editScope == QStringLiteral("future"))
         && !event.value(QStringLiteral("seriesId")).toString().isEmpty();
-    const QString updateOperation = editScope == QStringLiteral("future")
+    const QString updateOperation = calendarMove ? QStringLiteral("move")
+        : editScope == QStringLiteral("future")
         ? QStringLiteral("update-future")
         : seriesScope ? QStringLiteral("update-series") : QStringLiteral("update");
     if (existing.value(4).toString() == QStringLiteral("local-pending")
@@ -934,15 +1226,19 @@ bool Database::updatePendingEvent(const QJsonObject &event)
     for (QDate date = firstDate; date <= lastDate; date = date.addDays(1)) {
         int column = 0;
         row.bindValue(column++, eventId); row.bindValue(column++, date.toString(Qt::ISODate));
-        row.bindValue(column++, calendarId); row.bindValue(column++, startMs); row.bindValue(column++, endMs);
+        row.bindValue(column++, calendarMove ? targetCalendarId : calendarId);
+        row.bindValue(column++, startMs); row.bindValue(column++, endMs);
         row.bindValue(column++, allDay ? 1 : 0); row.bindValue(column++, title);
         row.bindValue(column++, event.value(QStringLiteral("description")).toString(QStringLiteral("")));
         row.bindValue(column++, event.value(QStringLiteral("location")).toString(QStringLiteral("")));
         row.bindValue(column++, existing.value(5)); row.bindValue(column++, existing.value(6));
         row.bindValue(column++, QString::fromUtf8(zone.id())); row.bindValue(column++, existing.value(7));
-        row.bindValue(column++, existing.value(8)); row.bindValue(column++, existing.value(3));
-        row.bindValue(column++, existing.value(9)); row.bindValue(column++, existing.value(10));
-        row.bindValue(column++, existing.value(4)); row.bindValue(column++, allDayStart); row.bindValue(column++, allDayEnd);
+        row.bindValue(column++, event.value(QStringLiteral("transparency")).toString(existing.value(8).toString()));
+        row.bindValue(column++, existing.value(3));
+        row.bindValue(column++, existing.value(9));
+        row.bindValue(column++, calendarMove ? json : existing.value(10).toString());
+        row.bindValue(column++, calendarMove ? QStringLiteral("local-pending") : existing.value(4));
+        row.bindValue(column++, allDayStart); row.bindValue(column++, allDayEnd);
         row.bindValue(column++, existing.value(11)); row.bindValue(column++, existing.value(12));
         row.bindValue(column++, existing.value(13)); row.bindValue(column++, existing.value(14));
         row.bindValue(column++, existing.value(15));
@@ -953,8 +1249,9 @@ bool Database::updatePendingEvent(const QJsonObject &event)
     QSqlQuery mutation(m_database);
     if (existing.value(4).toString() == QStringLiteral("local-pending")) {
         mutation.prepare(QStringLiteral(
-            "UPDATE pending_mutations SET payload_json=?,updated_at=? "
+            "UPDATE pending_mutations SET calendar_id=?,payload_json=?,updated_at=? "
             "WHERE calendar_id=? AND provider_event_id=? AND operation='create'"));
+        mutation.addBindValue(calendarMove ? targetCalendarId : calendarId);
         mutation.addBindValue(json);
         mutation.addBindValue(now);
         mutation.addBindValue(calendarId);
@@ -966,7 +1263,7 @@ bool Database::updatePendingEvent(const QJsonObject &event)
             "WHERE id=(SELECT id FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
             "AND operation=? AND state IN ('queued','retrying','failed') ORDER BY created_at DESC LIMIT 1)"));
         mutation.addBindValue(json);
-        mutation.addBindValue(seriesScope ? QStringLiteral("") : existing.value(3).toString());
+        mutation.addBindValue((seriesScope || calendarMove) ? QStringLiteral("") : existing.value(3).toString());
         mutation.addBindValue(now);
         mutation.addBindValue(calendarId);
         mutation.addBindValue(eventId);
@@ -982,7 +1279,7 @@ bool Database::updatePendingEvent(const QJsonObject &event)
             mutation.addBindValue(eventId);
             mutation.addBindValue(updateOperation);
             mutation.addBindValue(json);
-            mutation.addBindValue(seriesScope ? QStringLiteral("") : existing.value(3).toString());
+            mutation.addBindValue((seriesScope || calendarMove) ? QStringLiteral("") : existing.value(3).toString());
             mutation.addBindValue(now);
             mutation.addBindValue(now);
             queued = mutation.exec();
@@ -993,6 +1290,91 @@ bool Database::updatePendingEvent(const QJsonObject &event)
                  row.lastError().text() + mutation.lastError().text());
         m_database.rollback();
         return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::respondPendingEvent(const QString &calendarId, const QString &eventId,
+                                   const QString &responseStatus)
+{
+    const QSet<QString> allowed { QStringLiteral("accepted"), QStringLiteral("declined"),
+                                  QStringLiteral("tentative") };
+    if (calendarId.isEmpty() || eventId.isEmpty() || !allowed.contains(responseStatus)) {
+        setError(QStringLiteral("Invitation response could not be queued"),
+                 QStringLiteral("event and a valid response are required"));
+        return false;
+    }
+    QSqlQuery event(m_database);
+    event.prepare(QStringLiteral(
+        "SELECT c.account_id,c.access_role,e.etag,e.raw_json,e.source FROM events e "
+        "JOIN calendars c ON c.id=e.calendar_id WHERE e.calendar_id=? AND e.provider_event_id=? LIMIT 1"));
+    event.addBindValue(calendarId);
+    event.addBindValue(eventId);
+    if (!event.exec() || !event.next()) {
+        setError(QStringLiteral("Invitation response could not be queued"), QStringLiteral("event was not found"));
+        return false;
+    }
+    if (event.value(1).toString() != QStringLiteral("owner")
+        && event.value(1).toString() != QStringLiteral("writer")) {
+        setError(QStringLiteral("Invitation response could not be queued"), QStringLiteral("calendar is read-only"));
+        return false;
+    }
+    if (event.value(4).toString() == QStringLiteral("local-pending")) {
+        setError(QStringLiteral("Invitation response could not be queued"),
+                 QStringLiteral("the invitation has not synchronized yet"));
+        return false;
+    }
+    QJsonObject payload = QJsonDocument::fromJson(event.value(3).toByteArray()).object();
+    QJsonArray attendees = payload.value(QStringLiteral("attendees")).toArray();
+    bool foundSelf = false;
+    for (qsizetype index = 0; index < attendees.size(); ++index) {
+        QJsonObject attendee = attendees.at(index).toObject();
+        if (!attendee.value(QStringLiteral("self")).toBool()) continue;
+        attendee.insert(QStringLiteral("responseStatus"), responseStatus);
+        attendees.replace(index, attendee);
+        foundSelf = true;
+        break;
+    }
+    if (!foundSelf || payload.value(QStringLiteral("organizer")).toObject()
+                          .value(QStringLiteral("self")).toBool(false)) {
+        setError(QStringLiteral("Invitation response could not be queued"),
+                 QStringLiteral("this event is not an invitation for the signed-in user"));
+        return false;
+    }
+    payload.insert(QStringLiteral("attendees"), attendees);
+    payload.insert(QStringLiteral("responseStatus"), responseStatus);
+    payload.insert(QStringLiteral("title"), payload.value(QStringLiteral("summary")));
+    const QString json = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    QSqlQuery mutation(m_database);
+    mutation.prepare(QStringLiteral(
+        "UPDATE pending_mutations SET payload_json=?,base_etag=?,state='queued',last_error='',updated_at=? "
+        "WHERE id=(SELECT id FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
+        "AND operation='rsvp' AND state IN ('queued','retrying','failed','conflict','blocked') "
+        "ORDER BY created_at DESC LIMIT 1)"));
+    mutation.addBindValue(json);
+    mutation.addBindValue(event.value(2).toString());
+    mutation.addBindValue(now);
+    mutation.addBindValue(calendarId);
+    mutation.addBindValue(eventId);
+    if (!mutation.exec()) return false;
+    if (mutation.numRowsAffected() == 0) {
+        mutation.prepare(QStringLiteral(
+            "INSERT INTO pending_mutations(id,account_id,calendar_id,provider_event_id,operation,payload_json,"
+            "base_etag,created_at,updated_at) VALUES(?,?,?,?, 'rsvp',?,?,?,?)"));
+        mutation.addBindValue(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        mutation.addBindValue(event.value(0).toString());
+        mutation.addBindValue(calendarId);
+        mutation.addBindValue(eventId);
+        mutation.addBindValue(json);
+        mutation.addBindValue(event.value(2).toString());
+        mutation.addBindValue(now);
+        mutation.addBindValue(now);
+        if (!mutation.exec()) {
+            setError(QStringLiteral("Invitation response could not be queued"), mutation.lastError().text());
+            return false;
+        }
     }
     m_lastError.clear();
     return true;
@@ -1315,6 +1697,8 @@ QJsonDocument Database::nextPendingMutation(const QString &accountId) const
         "m.payload_json,m.attempt_count,m.state,m.base_etag FROM pending_mutations m "
         "JOIN calendars c ON c.id=m.calendar_id "
         "WHERE m.account_id=? AND m.state IN ('queued','retrying','uploading') "
+        "AND NOT EXISTS (SELECT 1 FROM pending_mutations earlier WHERE earlier.account_id=m.account_id "
+        "AND earlier.rowid<m.rowid AND earlier.state!='undoable') "
         "ORDER BY m.created_at LIMIT 1"));
     query.addBindValue(accountId);
     if (!query.exec() || !query.next())
@@ -1341,13 +1725,317 @@ bool Database::setMutationState(const QString &mutationId, const QString &state,
         ? QStringLiteral("UPDATE pending_mutations SET state=?,last_error=?,attempt_count=attempt_count+1,updated_at=? WHERE id=?")
         : QStringLiteral("UPDATE pending_mutations SET state=?,last_error=?,updated_at=? WHERE id=?"));
     query.addBindValue(state);
-    query.addBindValue(error);
+    query.addBindValue(error.isNull() ? QStringLiteral("") : error);
     query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
     query.addBindValue(mutationId);
     if (query.exec() && query.numRowsAffected() == 1)
         return true;
     setError(QStringLiteral("Mutation state could not be updated"), query.lastError().text());
     return false;
+}
+
+QJsonDocument Database::pendingMutations() const
+{
+    QJsonArray result;
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT m.id,m.operation,m.state,m.attempt_count,m.last_error,m.created_at,m.updated_at,"
+        "m.provider_event_id,m.payload_json,c.name,a.email,"
+        "(SELECT COUNT(*) FROM pending_mutations active WHERE active.state='uploading') AS uploading_count "
+        "FROM pending_mutations m JOIN calendars c ON c.id=m.calendar_id "
+        "JOIN accounts a ON a.id=m.account_id WHERE m.state!='undoable' "
+        "ORDER BY m.created_at"));
+    if (!query.exec()) {
+        m_lastError = query.lastError().text();
+        return QJsonDocument(result);
+    }
+    while (query.next()) {
+        const QJsonObject payload = QJsonDocument::fromJson(query.value(8).toByteArray()).object();
+        QString title = payload.value(QStringLiteral("title")).toString();
+        if (title.isEmpty()) {
+            const QJsonArray rows = payload.value(QStringLiteral("rows")).toArray();
+            if (!rows.isEmpty()) title = rows.first().toObject().value(QStringLiteral("title")).toString();
+        }
+        if (title.isEmpty()) title = QStringLiteral("Untitled event");
+        const QString state = query.value(2).toString();
+        result.append(QJsonObject {
+            { QStringLiteral("id"), query.value(0).toString() },
+            { QStringLiteral("operation"), query.value(1).toString() },
+            { QStringLiteral("state"), state },
+            { QStringLiteral("attemptCount"), query.value(3).toInt() },
+            { QStringLiteral("lastError"), query.value(4).toString() },
+            { QStringLiteral("createdAt"), query.value(5).toString() },
+            { QStringLiteral("updatedAt"), query.value(6).toString() },
+            { QStringLiteral("eventId"), query.value(7).toString() },
+            { QStringLiteral("title"), title },
+            { QStringLiteral("calendarName"), query.value(9).toString() },
+            { QStringLiteral("accountEmail"), query.value(10).toString() },
+            { QStringLiteral("canRetry"), state == QStringLiteral("failed")
+                || state == QStringLiteral("conflict") || state == QStringLiteral("blocked")
+                || state == QStringLiteral("retrying") },
+            { QStringLiteral("canDiscard"), state != QStringLiteral("uploading")
+                && query.value(11).toInt() == 0 }
+        });
+    }
+    return QJsonDocument(result);
+}
+
+QJsonDocument Database::takeNewInvitations()
+{
+    QJsonArray result;
+    if (!m_database.transaction()) return QJsonDocument(result);
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT e.calendar_id,e.provider_event_id,e.title,e.start_ms,e.all_day,c.name "
+        "FROM events e JOIN calendars c ON c.id=e.calendar_id "
+        "WHERE e.rowid IN (SELECT MIN(rowid) FROM events GROUP BY calendar_id,provider_event_id) "
+        "AND e.end_ms>=? AND c.selected=1 AND json_valid(e.raw_json) "
+        "AND COALESCE(json_extract(e.raw_json,'$.organizer.self'),0)=0 "
+        "AND EXISTS (SELECT 1 FROM json_each(e.raw_json,'$.attendees') WHERE json_extract(value,'$.self')=1 "
+        "AND json_extract(value,'$.responseStatus')='needsAction') "
+        "AND NOT EXISTS (SELECT 1 FROM invitation_notifications n WHERE n.calendar_id=e.calendar_id "
+        "AND n.event_id=e.provider_event_id) ORDER BY e.start_ms"));
+    query.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!query.exec()) {
+        setError(QStringLiteral("New invitations could not be read"), query.lastError().text());
+        m_database.rollback();
+        return QJsonDocument(result);
+    }
+    QSqlQuery mark(m_database);
+    mark.prepare(QStringLiteral(
+        "INSERT OR IGNORE INTO invitation_notifications(calendar_id,event_id,response_status,notified_at) "
+        "VALUES(?,?,'needsAction',?)"));
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    while (query.next()) {
+        result.append(QJsonObject {
+            { QStringLiteral("calendarId"), query.value(0).toString() },
+            { QStringLiteral("eventId"), query.value(1).toString() },
+            { QStringLiteral("title"), query.value(2).toString() },
+            { QStringLiteral("startMs"), query.value(3).toDouble() },
+            { QStringLiteral("allDay"), query.value(4).toBool() },
+            { QStringLiteral("calendarName"), query.value(5).toString() }
+        });
+        mark.bindValue(0, query.value(0));
+        mark.bindValue(1, query.value(1));
+        mark.bindValue(2, now);
+        if (!mark.exec()) {
+            setError(QStringLiteral("Invitation notification could not be recorded"), mark.lastError().text());
+            m_database.rollback();
+            return QJsonDocument(QJsonArray {});
+        }
+    }
+    if (!m_database.commit()) return QJsonDocument(QJsonArray {});
+    m_lastError.clear();
+    return QJsonDocument(result);
+}
+
+QJsonDocument Database::dueReminders(qint64 nowMs) const
+{
+    QJsonArray result;
+    QSqlQuery initialized(QStringLiteral(
+        "SELECT value FROM metadata WHERE key='reminder_scheduler_initialized_ms'"), m_database);
+    const qint64 initializedMs = initialized.next() ? initialized.value(0).toLongLong() : nowMs;
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT e.calendar_id,e.provider_event_id,e.title,e.start_ms,e.end_ms,e.all_day,e.event_url,"
+        "COALESCE((SELECT p.payload_json FROM pending_mutations p WHERE p.calendar_id=e.calendar_id "
+        "AND p.provider_event_id=e.provider_event_id AND p.operation IN ('update','update-series','update-future') "
+        "ORDER BY p.created_at DESC LIMIT 1),e.raw_json),c.default_reminders,c.name "
+        "FROM events e JOIN calendars c ON c.id=e.calendar_id "
+        "WHERE e.rowid IN (SELECT MIN(rowid) FROM events GROUP BY calendar_id,provider_event_id,start_ms) "
+        "AND e.end_ms>? AND e.start_ms<=? AND c.selected=1 AND e.status!='cancelled' ORDER BY e.start_ms"));
+    query.addBindValue(nowMs - 5 * 60 * 1000);
+    query.addBindValue(nowMs + qint64(28) * 24 * 60 * 60 * 1000);
+    if (!query.exec()) {
+        m_lastError = query.lastError().text();
+        return QJsonDocument(result);
+    }
+    QSqlQuery delivery(m_database);
+    delivery.prepare(QStringLiteral(
+        "SELECT state,scheduled_ms FROM reminder_deliveries WHERE id=?"));
+    while (query.next()) {
+        const QJsonObject raw = QJsonDocument::fromJson(query.value(7).toByteArray()).object();
+        QJsonObject reminders = raw.value(QStringLiteral("reminders")).toObject();
+        QJsonArray overrides = reminders.value(QStringLiteral("overrides")).toArray();
+        if (reminders.isEmpty() || reminders.value(QStringLiteral("useDefault")).toBool())
+            overrides = QJsonDocument::fromJson(query.value(8).toByteArray()).array();
+        for (const QJsonValue &value : overrides) {
+            const QJsonObject reminder = value.toObject();
+            if (reminder.value(QStringLiteral("method")).toString(QStringLiteral("popup"))
+                != QStringLiteral("popup")) continue;
+            const int minutes = reminder.value(QStringLiteral("minutes")).toInt(-1);
+            if (minutes < 0) continue;
+            const qint64 originalScheduled = query.value(3).toLongLong() - qint64(minutes) * 60000;
+            const QByteArray identity = query.value(0).toByteArray() + '\0' + query.value(1).toByteArray()
+                + '\0' + QByteArray::number(query.value(3).toLongLong()) + '\0' + QByteArray::number(minutes);
+            const QString id = QString::fromLatin1(
+                QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
+            delivery.bindValue(0, id);
+            QString state;
+            qint64 scheduled = originalScheduled;
+            if (delivery.exec() && delivery.next()) {
+                state = delivery.value(0).toString();
+                scheduled = delivery.value(1).toLongLong();
+            }
+            if (state == QStringLiteral("delivered") || state == QStringLiteral("dismissed")
+                || scheduled > nowMs || (state.isEmpty() && originalScheduled < initializedMs)) continue;
+            const QJsonArray links = meetingLinks(raw);
+            result.append(QJsonObject {
+                { QStringLiteral("id"), id },
+                { QStringLiteral("calendarId"), query.value(0).toString() },
+                { QStringLiteral("eventId"), query.value(1).toString() },
+                { QStringLiteral("title"), query.value(2).toString() },
+                { QStringLiteral("startMs"), query.value(3).toDouble() },
+                { QStringLiteral("endMs"), query.value(4).toDouble() },
+                { QStringLiteral("allDay"), query.value(5).toBool() },
+                { QStringLiteral("eventUrl"), query.value(6).toString() },
+                { QStringLiteral("calendarName"), query.value(9).toString() },
+                { QStringLiteral("minutes"), minutes },
+                { QStringLiteral("scheduledMs"), double(scheduled) },
+                { QStringLiteral("meetingLinks"), links }
+            });
+        }
+    }
+    return QJsonDocument(result);
+}
+
+bool Database::markReminderDelivered(const QString &reminderId, uint notificationId)
+{
+    const QJsonArray due = dueReminders(QDateTime::currentMSecsSinceEpoch()).array();
+    QJsonObject target;
+    for (const QJsonValue &value : due)
+        if (value.toObject().value(QStringLiteral("id")).toString() == reminderId) target = value.toObject();
+    if (target.isEmpty()) return false;
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "INSERT INTO reminder_deliveries(id,calendar_id,event_id,start_ms,minutes,scheduled_ms,state,notification_id,updated_at) "
+        "VALUES(?,?,?,?,?,?,'delivered',?,?) ON CONFLICT(id) DO UPDATE SET state='delivered',"
+        "notification_id=excluded.notification_id,updated_at=excluded.updated_at"));
+    query.addBindValue(reminderId);
+    query.addBindValue(target.value(QStringLiteral("calendarId")).toString());
+    query.addBindValue(target.value(QStringLiteral("eventId")).toString());
+    query.addBindValue(qint64(target.value(QStringLiteral("startMs")).toDouble()));
+    query.addBindValue(target.value(QStringLiteral("minutes")).toInt());
+    query.addBindValue(qint64(target.value(QStringLiteral("scheduledMs")).toDouble()));
+    query.addBindValue(notificationId);
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    return query.exec();
+}
+
+bool Database::snoozeReminder(const QString &reminderId, qint64 untilMs)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "UPDATE reminder_deliveries SET state='snoozed',scheduled_ms=?,notification_id=0,updated_at=? WHERE id=?"));
+    query.addBindValue(untilMs);
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(reminderId);
+    return query.exec() && query.numRowsAffected() == 1;
+}
+
+bool Database::dismissReminder(const QString &reminderId)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "UPDATE reminder_deliveries SET state='dismissed',notification_id=0,updated_at=? WHERE id=?"));
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(reminderId);
+    return query.exec() && query.numRowsAffected() == 1;
+}
+
+QString Database::reminderIdForNotification(uint notificationId) const
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "SELECT id FROM reminder_deliveries WHERE notification_id=? LIMIT 1"));
+    query.addBindValue(notificationId);
+    return query.exec() && query.next() ? query.value(0).toString() : QString();
+}
+
+bool Database::pruneReminderDeliveries(qint64 beforeStartMs)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("DELETE FROM reminder_deliveries WHERE start_ms<?"));
+    query.addBindValue(beforeStartMs);
+    return query.exec();
+}
+
+bool Database::retryMutation(const QString &mutationId)
+{
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+        "UPDATE pending_mutations SET state='queued',last_error='',updated_at=? WHERE id=? "
+        "AND state IN ('failed','conflict','blocked','retrying')"));
+    query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.addBindValue(mutationId);
+    if (!query.exec() || query.numRowsAffected() != 1) {
+        setError(QStringLiteral("Queued change could not be retried"),
+                 query.lastError().text().isEmpty() ? QStringLiteral("change is no longer retryable")
+                                                    : query.lastError().text());
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::discardMutation(const QString &mutationId)
+{
+    QSqlQuery selected(m_database);
+    selected.prepare(QStringLiteral(
+        "SELECT operation,state,calendar_id,provider_event_id,payload_json FROM pending_mutations WHERE id=?"));
+    selected.addBindValue(mutationId);
+    if (!selected.exec() || !selected.next()) {
+        setError(QStringLiteral("Queued change could not be discarded"), QStringLiteral("change was not found"));
+        return false;
+    }
+    const QString operation = selected.value(0).toString();
+    const QString state = selected.value(1).toString();
+    const QString calendarId = selected.value(2).toString();
+    const QString eventId = selected.value(3).toString();
+    const QJsonObject payload = QJsonDocument::fromJson(selected.value(4).toByteArray()).object();
+    if (state == QStringLiteral("uploading") || state == QStringLiteral("undoable")) {
+        setError(QStringLiteral("Queued change could not be discarded"),
+                 QStringLiteral("change is currently being processed"));
+        return false;
+    }
+    QSqlQuery active(m_database);
+    if (!active.exec(QStringLiteral("SELECT 1 FROM pending_mutations WHERE state='uploading' LIMIT 1"))
+        || active.next()) {
+        setError(QStringLiteral("Queued change could not be discarded"),
+                 QStringLiteral("another change is currently being uploaded"));
+        return false;
+    }
+    if (operation.startsWith(QStringLiteral("delete"))) {
+        QSqlQuery makeUndoable(m_database);
+        makeUndoable.prepare(QStringLiteral("UPDATE pending_mutations SET state='undoable' WHERE id=?"));
+        makeUndoable.addBindValue(mutationId);
+        if (!makeUndoable.exec() || makeUndoable.numRowsAffected() != 1)
+            return false;
+        return undoPendingDelete(mutationId);
+    }
+
+    if (!m_database.transaction()) return false;
+    QSqlQuery removeEvents(m_database);
+    if (operation == QStringLiteral("move")) {
+        removeEvents.prepare(QStringLiteral("DELETE FROM events WHERE calendar_id=? AND provider_event_id=?"));
+        removeEvents.addBindValue(payload.value(QStringLiteral("targetCalendarId")).toString());
+    } else {
+        removeEvents.prepare(QStringLiteral("DELETE FROM events WHERE calendar_id=? AND provider_event_id=?"));
+        removeEvents.addBindValue(calendarId);
+    }
+    removeEvents.addBindValue(eventId);
+    QSqlQuery removeMutation(m_database);
+    removeMutation.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
+    removeMutation.addBindValue(mutationId);
+    if (!removeEvents.exec() || !removeMutation.exec() || removeMutation.numRowsAffected() != 1
+        || !m_database.commit()) {
+        setError(QStringLiteral("Queued change could not be discarded"),
+                 removeEvents.lastError().text() + removeMutation.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
 }
 
 bool Database::completeCreateMutation(const QString &mutationId, const QJsonObject &remoteEvent)
@@ -1457,6 +2145,24 @@ bool Database::rebaseUpdateMutation(const QString &mutationId, const QJsonObject
     mergeText(QStringLiteral("title"), QStringLiteral("summary"), QStringLiteral("title"));
     mergeText(QStringLiteral("description"), QStringLiteral("description"), QStringLiteral("notes"));
     mergeText(QStringLiteral("location"), QStringLiteral("location"), QStringLiteral("location"));
+    const auto mergeJson = [&](const QString &key, const QString &label) {
+        const QJsonValue baseValue = base.value(key);
+        const QJsonValue localValue = local.value(key);
+        const QJsonValue remoteValue = remoteEvent.value(key);
+        const bool localChanged = localValue != baseValue;
+        const bool remoteChanged = remoteValue != baseValue;
+        if (localChanged && remoteChanged && localValue != remoteValue)
+            conflicts.append(label);
+        else if (!localChanged)
+            local.insert(key, remoteValue);
+    };
+    mergeJson(QStringLiteral("attendees"), QStringLiteral("guests"));
+    mergeJson(QStringLiteral("reminders"), QStringLiteral("reminders"));
+    mergeJson(QStringLiteral("visibility"), QStringLiteral("visibility"));
+    mergeJson(QStringLiteral("transparency"), QStringLiteral("availability"));
+    mergeJson(QStringLiteral("guestsCanInviteOthers"), QStringLiteral("guest invitation permission"));
+    mergeJson(QStringLiteral("guestsCanModify"), QStringLiteral("guest editing permission"));
+    mergeJson(QStringLiteral("guestsCanSeeOtherGuests"), QStringLiteral("guest-list permission"));
 
     const QJsonObject baseStart = base.value(QStringLiteral("start")).toObject();
     const QJsonObject baseEnd = base.value(QStringLiteral("end")).toObject();
@@ -1624,6 +2330,70 @@ bool Database::rebaseUpdateMutation(const QString &mutationId, const QJsonObject
     return true;
 }
 
+bool Database::rebaseRsvpMutation(const QString &mutationId, const QJsonObject &remoteEvent)
+{
+    const QString remoteEtag = remoteEvent.value(QStringLiteral("etag")).toString();
+    if (remoteEtag.isEmpty()) {
+        setError(QStringLiteral("Invitation response could not be rebased"), QStringLiteral("Google returned no ETag"));
+        return false;
+    }
+    QSqlQuery selected(m_database);
+    selected.prepare(QStringLiteral(
+        "SELECT payload_json,calendar_id,provider_event_id FROM pending_mutations "
+        "WHERE id=? AND operation='rsvp'"));
+    selected.addBindValue(mutationId);
+    if (!selected.exec() || !selected.next()) {
+        setError(QStringLiteral("Invitation response could not be rebased"), QStringLiteral("queued response not found"));
+        return false;
+    }
+    const QJsonObject local = QJsonDocument::fromJson(selected.value(0).toByteArray()).object();
+    const QString response = local.value(QStringLiteral("responseStatus")).toString();
+    QJsonObject rebased = remoteEvent;
+    QJsonArray attendees = rebased.value(QStringLiteral("attendees")).toArray();
+    bool foundSelf = false;
+    for (qsizetype index = 0; index < attendees.size(); ++index) {
+        QJsonObject attendee = attendees.at(index).toObject();
+        if (!attendee.value(QStringLiteral("self")).toBool()) continue;
+        attendee.insert(QStringLiteral("responseStatus"), response);
+        attendees.replace(index, attendee);
+        foundSelf = true;
+        break;
+    }
+    if (!foundSelf) {
+        setError(QStringLiteral("Invitation response could not be rebased"),
+                 QStringLiteral("Google no longer lists the signed-in user as an attendee"));
+        return false;
+    }
+    rebased.insert(QStringLiteral("attendees"), attendees);
+    rebased.insert(QStringLiteral("responseStatus"), response);
+    rebased.insert(QStringLiteral("title"), rebased.value(QStringLiteral("summary")));
+    if (!m_database.transaction()) return false;
+    QSqlQuery mutation(m_database);
+    mutation.prepare(QStringLiteral(
+        "UPDATE pending_mutations SET payload_json=?,base_etag=?,state='queued',last_error='',updated_at=? WHERE id=?"));
+    mutation.addBindValue(QString::fromUtf8(QJsonDocument(rebased).toJson(QJsonDocument::Compact)));
+    mutation.addBindValue(remoteEtag);
+    mutation.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    mutation.addBindValue(mutationId);
+    QSqlQuery event(m_database);
+    event.prepare(QStringLiteral(
+        "UPDATE events SET etag=?,provider_updated_at=?,raw_json=? WHERE calendar_id=? AND provider_event_id=?"));
+    event.addBindValue(remoteEtag);
+    event.addBindValue(remoteEvent.value(QStringLiteral("updated")).toString());
+    event.addBindValue(QString::fromUtf8(QJsonDocument(remoteEvent).toJson(QJsonDocument::Compact)));
+    event.addBindValue(selected.value(1).toString());
+    event.addBindValue(selected.value(2).toString());
+    if (!mutation.exec() || mutation.numRowsAffected() != 1 || !event.exec()
+        || event.numRowsAffected() < 1 || !m_database.commit()) {
+        setError(QStringLiteral("Invitation response rebase could not be stored"),
+                 mutation.lastError().text() + event.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
 bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObject &remoteEvent)
 {
     const QString remoteId = remoteEvent.value(QStringLiteral("id")).toString();
@@ -1635,7 +2405,7 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     QSqlQuery mutation(m_database);
     mutation.prepare(QStringLiteral(
         "SELECT calendar_id,provider_event_id,operation FROM pending_mutations "
-        "WHERE id=? AND operation IN ('update','update-series','update-future')"));
+        "WHERE id=? AND operation IN ('update','update-series','update-future','rsvp')"));
     mutation.addBindValue(mutationId);
     if (!mutation.exec() || !mutation.next()) {
         setError(QStringLiteral("Queued update could not be found"), mutation.lastError().text());
@@ -1644,7 +2414,9 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     }
     const QString calendarId = mutation.value(0).toString();
     const QString providerEventId = mutation.value(1).toString();
-    const bool seriesUpdate = mutation.value(2).toString() != QStringLiteral("update");
+    const QString operation = mutation.value(2).toString();
+    const bool seriesUpdate = operation == QStringLiteral("update-series")
+        || operation == QStringLiteral("update-future");
     QSqlQuery pendingDelete(m_database);
     pendingDelete.prepare(QStringLiteral(
         "SELECT 1 FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
@@ -1666,7 +2438,7 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     QSqlQuery advance(m_database);
     advance.prepare(QStringLiteral(
         "UPDATE pending_mutations SET base_etag=?,updated_at=? WHERE calendar_id=? "
-        "AND provider_event_id=? AND operation IN ('update','delete') AND id!=?"));
+        "AND provider_event_id=? AND operation IN ('update','delete','rsvp') AND id!=?"));
     advance.addBindValue(remoteEvent.value(QStringLiteral("etag")).toString(QStringLiteral("")));
     advance.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
     advance.addBindValue(calendarId);
@@ -1679,6 +2451,59 @@ bool Database::completeUpdateMutation(const QString &mutationId, const QJsonObje
     if (!updated || (!seriesUpdate && update.numRowsAffected() < 1 && !deleting) || !advance.exec()
         || !remove.exec() || !m_database.commit()) {
         setError(QStringLiteral("Google event update could not be reconciled"),
+                 update.lastError().text() + remove.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    m_lastError.clear();
+    return true;
+}
+
+bool Database::completeMoveMutation(const QString &mutationId, const QJsonObject &remoteEvent)
+{
+    const QString remoteId = remoteEvent.value(QStringLiteral("id")).toString();
+    if (remoteId.isEmpty()) {
+        setError(QStringLiteral("Google move response was incomplete"), QStringLiteral("missing event id"));
+        return false;
+    }
+    if (!m_database.transaction()) return false;
+    QSqlQuery mutation(m_database);
+    mutation.prepare(QStringLiteral(
+        "SELECT provider_event_id,payload_json FROM pending_mutations WHERE id=? AND operation='move'"));
+    mutation.addBindValue(mutationId);
+    if (!mutation.exec() || !mutation.next()) {
+        setError(QStringLiteral("Queued move could not be found"), mutation.lastError().text());
+        m_database.rollback();
+        return false;
+    }
+    const QString providerEventId = mutation.value(0).toString();
+    const QJsonObject payload = QJsonDocument::fromJson(mutation.value(1).toByteArray()).object();
+    const QString targetCalendarId = payload.value(QStringLiteral("targetCalendarId")).toString();
+    if (targetCalendarId.isEmpty()) {
+        setError(QStringLiteral("Queued move was incomplete"), QStringLiteral("missing destination calendar"));
+        m_database.rollback();
+        return false;
+    }
+    QSqlQuery update(m_database);
+    update.prepare(QStringLiteral(
+        "UPDATE events SET provider_event_id=?,event_url=?,provider_uid=?,etag=?,provider_updated_at=?,"
+        "status=?,transparency=?,raw_json=?,source='google' "
+        "WHERE calendar_id=? AND provider_event_id=?"));
+    update.addBindValue(remoteId);
+    update.addBindValue(remoteEvent.value(QStringLiteral("htmlLink")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("iCalUID")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("etag")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("updated")).toString(QStringLiteral("")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("status")).toString(QStringLiteral("confirmed")));
+    update.addBindValue(remoteEvent.value(QStringLiteral("transparency")).toString(QStringLiteral("opaque")));
+    update.addBindValue(QString::fromUtf8(QJsonDocument(remoteEvent).toJson(QJsonDocument::Compact)));
+    update.addBindValue(targetCalendarId);
+    update.addBindValue(providerEventId);
+    QSqlQuery remove(m_database);
+    remove.prepare(QStringLiteral("DELETE FROM pending_mutations WHERE id=?"));
+    remove.addBindValue(mutationId);
+    if (!update.exec() || update.numRowsAffected() < 1 || !remove.exec() || !m_database.commit()) {
+        setError(QStringLiteral("Google event move could not be reconciled"),
                  update.lastError().text() + remove.lastError().text());
         m_database.rollback();
         return false;
@@ -1730,11 +2555,13 @@ bool Database::replaceGoogleCalendars(const QString &accountId, const QJsonArray
     QSet<QString> retained;
     QSqlQuery upsert(m_database);
     upsert.prepare(QStringLiteral(
-        "INSERT INTO calendars(id, name, color, source, account_id, provider_calendar_id, time_zone, access_role, selected) "
-        "VALUES(?, ?, ?, 'google', ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+        "INSERT INTO calendars(id, name, color, source, account_id, provider_calendar_id, time_zone, access_role, selected, allowed_conference_types, default_reminders) "
+        "VALUES(?, ?, ?, 'google', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
         "name=excluded.name, color=excluded.color, account_id=excluded.account_id, "
         "provider_calendar_id=excluded.provider_calendar_id, time_zone=excluded.time_zone, "
-        "access_role=excluded.access_role, selected=calendars.selected, source='google'"));
+        "access_role=excluded.access_role, selected=calendars.selected, "
+        "allowed_conference_types=excluded.allowed_conference_types, "
+        "default_reminders=excluded.default_reminders, source='google'"));
 
     for (const auto &value : items) {
         if (!value.isObject())
@@ -1754,6 +2581,13 @@ bool Database::replaceGoogleCalendars(const QString &accountId, const QJsonArray
         upsert.bindValue(5, item.value(QStringLiteral("timeZone")).toString(QStringLiteral("")));
         upsert.bindValue(6, item.value(QStringLiteral("accessRole")).toString(QStringLiteral("")));
         upsert.bindValue(7, item.value(QStringLiteral("selected")).toBool(true) ? 1 : 0);
+        upsert.bindValue(8, QString::fromUtf8(QJsonDocument(
+            item.value(QStringLiteral("conferenceProperties")).toObject()
+                .value(QStringLiteral("allowedConferenceSolutionTypes")).toArray())
+                .toJson(QJsonDocument::Compact)));
+        upsert.bindValue(9, QString::fromUtf8(QJsonDocument(
+            item.value(QStringLiteral("defaultReminders")).toArray())
+                .toJson(QJsonDocument::Compact)));
         if (!upsert.exec()) {
             setError(QStringLiteral("Google calendar could not be stored"), upsert.lastError().text());
             m_database.rollback();
@@ -1798,7 +2632,7 @@ QJsonDocument Database::calendarsForAccount(const QString &accountId) const
     QJsonArray result;
     QSqlQuery query(m_database);
     query.prepare(QStringLiteral(
-        "SELECT id, provider_calendar_id, name, color, time_zone, access_role, selected "
+        "SELECT id, provider_calendar_id, name, color, time_zone, access_role, selected, allowed_conference_types "
         "FROM calendars WHERE account_id=? ORDER BY name"));
     query.addBindValue(accountId);
     if (!query.exec()) {
@@ -1813,7 +2647,9 @@ QJsonDocument Database::calendarsForAccount(const QString &accountId) const
             { QStringLiteral("color"), query.value(3).toString() },
             { QStringLiteral("timeZone"), query.value(4).toString() },
             { QStringLiteral("accessRole"), query.value(5).toString() },
-            { QStringLiteral("selected"), query.value(6).toBool() }
+            { QStringLiteral("selected"), query.value(6).toBool() },
+            { QStringLiteral("allowedConferenceTypes"),
+              QJsonDocument::fromJson(query.value(7).toByteArray()).array() }
         });
     }
     return QJsonDocument(result);
@@ -1864,7 +2700,7 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
     QSqlQuery pendingDelete(m_database);
     pendingDelete.prepare(QStringLiteral(
         "SELECT 1 FROM pending_mutations WHERE calendar_id=? AND provider_event_id=? "
-        "AND operation='delete' LIMIT 1"));
+        "AND operation IN ('delete','move') LIMIT 1"));
     QSqlQuery insert(m_database);
     insert.prepare(QStringLiteral(
         "INSERT INTO events(provider_event_id, date_key, calendar_id, start_ms, end_ms, all_day, "
@@ -1988,31 +2824,85 @@ bool Database::applyGoogleEvents(const QString &accountId, const QString &calend
 QJsonDocument Database::searchEvents(const QString &queryText, int limit) const
 {
     QJsonArray events;
-    const QString term = queryText.trimmed();
+    QString term = queryText.trimmed();
     if (term.isEmpty())
+        return QJsonDocument(events);
+
+    QMap<QString, QString> filters;
+    const QRegularExpression filterPattern(
+        QStringLiteral("\\b(calendar|after|before|organizer|response):(?:\"([^\"]+)\"|(\\S+))"),
+        QRegularExpression::CaseInsensitiveOption);
+    auto matches = filterPattern.globalMatch(term);
+    QList<QPair<int, int>> spans;
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        filters.insert(match.captured(1).toLower(),
+                       match.captured(2).isEmpty() ? match.captured(3) : match.captured(2));
+        spans.prepend({ match.capturedStart(), match.capturedLength() });
+    }
+    for (const auto &[start, length] : spans) term.remove(start, length);
+    term = term.simplified();
+
+    const QString displayJson = QStringLiteral(
+        "COALESCE((SELECT p.payload_json FROM pending_mutations p WHERE p.calendar_id=e.calendar_id "
+        "AND p.provider_event_id=e.provider_event_id AND p.operation IN ('update','update-series','update-future','rsvp') "
+        "ORDER BY p.created_at DESC LIMIT 1),e.raw_json)");
+    QStringList conditions {
+        QStringLiteral("e.rowid IN (SELECT MIN(rowid) FROM events GROUP BY provider_event_id)"),
+        QStringLiteral("c.selected=1"),
+        QStringLiteral("(c.source!='compat-json' OR NOT EXISTS (SELECT 1 FROM accounts WHERE provider='google' AND last_sync_at!=''))")
+    };
+    QVariantList bindings;
+    if (!term.isEmpty()) {
+        conditions.append(QStringLiteral(
+            "(instr(lower(e.title),lower(?))>0 OR instr(lower(e.description),lower(?))>0 "
+            "OR instr(lower(e.location),lower(?))>0 OR instr(lower(c.name),lower(?))>0 "
+            "OR instr(lower(%1),lower(?))>0)").arg(displayJson));
+        for (int index = 0; index < 5; ++index) bindings.append(term);
+    }
+    if (filters.contains(QStringLiteral("calendar"))) {
+        conditions.append(QStringLiteral("instr(lower(c.name),lower(?))>0"));
+        bindings.append(filters.value(QStringLiteral("calendar")));
+    }
+    if (filters.contains(QStringLiteral("organizer"))) {
+        conditions.append(QStringLiteral(
+            "instr(lower(COALESCE(json_extract(CASE WHEN json_valid(%1) THEN %1 ELSE '{}' END,"
+            "'$.organizer.email'),'')),lower(?))>0").arg(displayJson));
+        bindings.append(filters.value(QStringLiteral("organizer")));
+    }
+    if (filters.contains(QStringLiteral("response"))) {
+        conditions.append(QStringLiteral("instr(lower(%1),lower(?))>0").arg(displayJson));
+        bindings.append(QStringLiteral("\"responseStatus\":\"")
+                        + filters.value(QStringLiteral("response")) + QStringLiteral("\""));
+    }
+    const auto addDateFilter = [&](const QString &key, const QString &comparison) -> bool {
+        if (!filters.contains(key)) return true;
+        const QDate date = QDate::fromString(filters.value(key), Qt::ISODate);
+        if (!date.isValid()) return false;
+        conditions.append(QStringLiteral("e.start_ms%1?").arg(comparison));
+        bindings.append(QDateTime(date, QTime(0, 0)).toMSecsSinceEpoch());
+        return true;
+    };
+    if (!addDateFilter(QStringLiteral("after"), QStringLiteral(">="))
+        || !addDateFilter(QStringLiteral("before"), QStringLiteral("<")))
         return QJsonDocument(events);
 
     QSqlQuery query(m_database);
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
-        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
+        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url,"
+        "%1 AS display_json,e.transparency, "
         "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "e.recurring_event_id,e.original_start_ms,e.original_start_date,e.recurrence_json,e.is_exception, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "
         "AND span.provider_event_id=e.provider_event_id) AS day_count "
         "FROM events e JOIN calendars c ON c.id=e.calendar_id "
-        "WHERE e.rowid IN (SELECT MIN(rowid) FROM events GROUP BY provider_event_id) "
-        "AND c.selected=1 "
-        "AND (c.source!='compat-json' OR NOT EXISTS ("
-        "SELECT 1 FROM accounts WHERE provider='google' AND last_sync_at!='')) "
-        "AND (instr(lower(e.title), lower(?))>0 OR instr(lower(e.location), lower(?))>0 "
-        "OR instr(lower(c.name), lower(?))>0) "
+        "WHERE %2 "
         "ORDER BY CASE WHEN e.end_ms>=? THEN 0 ELSE 1 END, "
         "CASE WHEN e.end_ms>=? THEN e.start_ms END ASC, "
-        "CASE WHEN e.end_ms<? THEN e.start_ms END DESC LIMIT ?"));
-    query.addBindValue(term);
-    query.addBindValue(term);
-    query.addBindValue(term);
+        "CASE WHEN e.end_ms<? THEN e.start_ms END DESC LIMIT ?")
+        .arg(displayJson, conditions.join(QStringLiteral(" AND "))));
+    for (const QVariant &binding : bindings) query.addBindValue(binding);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     query.addBindValue(now);
     query.addBindValue(now);
@@ -2032,7 +2922,10 @@ QJsonDocument Database::nextEvent() const
     QSqlQuery query(m_database);
     query.prepare(QStringLiteral(
         "SELECT e.provider_event_id, e.calendar_id, c.name AS calendar_name, c.color, e.date_key, "
-        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url, "
+        "e.start_ms, e.end_ms, e.all_day, e.title, e.description, e.location, e.event_url,"
+        "COALESCE((SELECT p.payload_json FROM pending_mutations p WHERE p.calendar_id=e.calendar_id "
+        "AND p.provider_event_id=e.provider_event_id AND p.operation IN ('update','update-series','update-future','rsvp') "
+        "ORDER BY p.created_at DESC LIMIT 1),e.raw_json) AS display_json,e.transparency, "
         "COALESCE(NULLIF(e.time_zone,''),c.time_zone) AS time_zone, e.etag, e.source,e.all_day_start_date,e.all_day_end_date, "
         "e.recurring_event_id,e.original_start_ms,e.original_start_date,e.recurrence_json,e.is_exception, "
         "(SELECT COUNT(*) FROM events span WHERE span.calendar_id=e.calendar_id "

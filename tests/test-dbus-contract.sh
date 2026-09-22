@@ -34,16 +34,21 @@ dbus-run-session -- bash -c '
   search="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.SearchEvents Design 10)"
   accounts="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.GetAccounts)"
   provider="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.GetProviderStatus)"
+  pending="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.GetPendingMutations)"
+  diagnostics="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.GetDiagnostics)"
   begin="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.BeginGoogleAuthorization)"
   sync="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.SyncNow)"
   disconnect="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.DisconnectGoogle)"
   select_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.SetCalendarSelected missing true)"
   update_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.UpdateEvent \"{}\")"
+  rsvp_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.RespondToInvitation missing missing accepted)"
   delete_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.DeleteEvent missing missing)"
   undo_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.UndoDelete missing)"
+  retry_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.RetryMutation missing)"
+  discard_missing="$(gdbus call --session --dest org.omarchy.Calendar --object-path /org/omarchy/Calendar --method org.omarchy.Calendar1.DiscardMutation missing)"
 
   [[ "$status" == *"\"eventCount\":3"* ]]
-  [[ "$status" == *"\"schemaVersion\":7"* ]]
+  [[ "$status" == *"\"schemaVersion\":10"* ]]
   [[ "$range" == *"Design review"* ]]
   [[ "$range" == *"Conference"* ]]
   [[ "$search" == *"Design review"* ]]
@@ -54,13 +59,20 @@ dbus-run-session -- bash -c '
   [[ "$provider" == *"\"sync\":"* ]]
   [[ "$provider" == *"\"online\":"* ]]
   [[ "$provider" == *"\"state\":\"idle\""* ]]
+  [[ "$pending" == *"[]"* ]]
+  [[ "$diagnostics" == *"\"application\": \"Omarchy Calendar\""* ]]
+  [[ "$diagnostics" == *"\"serviceBacked\": true"* ]]
+  [[ "$diagnostics" != *"databasePath"* ]]
   [[ "$begin" == "(false,)" ]]
   [[ "$sync" == "(false,)" ]]
   [[ "$disconnect" == "(false,)" ]]
   [[ "$select_missing" == "(false,)" ]]
   [[ "$update_missing" == "(false,)" ]]
+  [[ "$rsvp_missing" == "(false,)" ]]
   [[ "$delete_missing" == \(*,\) && ${#delete_missing} -eq 5 ]]
   [[ "$undo_missing" == "(false,)" ]]
+  [[ "$retry_missing" == "(false,)" ]]
+  [[ "$discard_missing" == "(false,)" ]]
 '
 
 echo "dbus contract: ok"

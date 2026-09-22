@@ -3,6 +3,9 @@ import "../components"
 
 Item {
     id: root
+    Accessible.role: Accessible.Pane
+    Accessible.name: "Week calendar"
+    Accessible.description: "Use arrow keys to move between days and events. Press Enter for details."
     property var weekStart: new Date()
     property int startHour: 7
     property int endHour: 20

@@ -39,6 +39,7 @@ private:
     void fail(const QString &message, bool retryable = true);
     void scheduleRetry();
     void complete();
+    void clearWorkingSet();
 
     Database &m_database;
     QNetworkAccessManager *m_network = nullptr;

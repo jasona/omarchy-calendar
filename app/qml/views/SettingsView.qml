@@ -1,9 +1,13 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import "../components"
 
 Item {
     id: root
+    Accessible.role: Accessible.Pane
+    Accessible.name: "Calendar settings"
+    property string currentSection: "general"
     property var accounts: []
     property var calendars: []
     property var providerStatus: ({})
@@ -12,10 +16,30 @@ Item {
     property var googleAccount: accounts.filter(function(account) { return account.provider === "google" })[0] || ({})
     property var googleCalendars: calendars.filter(function(calendar) { return calendar.source === "google" })
     property bool googleConnected: !!googleAccount.id
+    property var pendingChanges: []
+    property var discardCandidate: ({})
+    property bool diagnosticsCopied: false
     signal connectGoogle()
     signal syncGoogle()
     signal disconnectGoogle()
     signal setCalendarSync(string calendarId, bool enabled)
+    signal showOnboarding()
+
+    function refreshPendingChanges() {
+        pendingChanges = eventStore.pendingMutations()
+    }
+
+    function operationLabel(operation) {
+        if (operation === "create") return "Create"
+        if (operation === "move") return "Move"
+        if (operation.indexOf("delete") === 0) return "Delete"
+        if (operation.indexOf("update") === 0) return "Update"
+        if (operation === "rsvp") return "RSVP"
+        return operation
+    }
+
+    onVisibleChanged: if (visible) refreshPendingChanges()
+    onMutationStatusChanged: if (visible) refreshPendingChanges()
 
     function syncSummary() {
         if (mutationStatus.state === "uploading")
@@ -44,9 +68,69 @@ Item {
         anchors.fill: parent
         color: theme.background
 
-        Column {
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 28 }
-            spacing: 22
+        RowLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            Rectangle {
+                id: settingsMenu
+                Layout.preferredWidth: 176
+                Layout.fillHeight: true
+                color: theme.backgroundDeep
+
+                Column {
+                    anchors { fill: parent; margins: 18 }
+                    spacing: 8
+
+                    Text {
+                        text: "SETTINGS"
+                        color: theme.foregroundMuted
+                        font.pixelSize: Math.max(10, theme.baseFontSize - 2)
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.2
+                        bottomPadding: 8
+                    }
+                    CalendarButton {
+                        width: parent.width
+                        text: "General"
+                        accessibleName: "General settings"
+                        selected: root.currentSection === "general"
+                        onClicked: root.currentSection = "general"
+                    }
+                    CalendarButton {
+                        width: parent.width
+                        text: "About"
+                        accessibleName: "About Omarchy Calendar"
+                        selected: root.currentSection === "about"
+                        onClicked: root.currentSection = "about"
+                    }
+                }
+
+                Rectangle {
+                    anchors { top: parent.top; right: parent.right; bottom: parent.bottom }
+                    width: 1
+                    color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.09)
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                Item {
+                    anchors.fill: parent
+                    visible: root.currentSection === "general"
+
+                    ScrollView {
+                        id: settingsScroll
+                        anchors { fill: parent; margins: 28 }
+                        contentWidth: availableWidth
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        Column {
+                        width: settingsScroll.availableWidth
+                        spacing: 22
 
             Column {
                 spacing: 6
@@ -60,6 +144,34 @@ Item {
                     text: "Connect calendar providers and control how their data is stored."
                     color: theme.foregroundMuted
                     font.pixelSize: theme.baseFontSize
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 78
+                radius: 14
+                color: theme.backgroundDeep
+                border.width: 1
+                border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.11)
+                RowLayout {
+                    anchors { fill: parent; margins: 16 }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text { text: "Interface density"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 1; font.weight: Font.DemiBold }
+                        Text { text: "Choose comfortable spacing or fit more of the day on screen."; color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 1) }
+                    }
+                    CalendarButton {
+                        text: "Comfortable"
+                        selected: preferences.interfaceDensity === "comfortable"
+                        onClicked: preferences.interfaceDensity = "comfortable"
+                    }
+                    CalendarButton {
+                        text: "Compact"
+                        selected: preferences.interfaceDensity === "compact"
+                        onClicked: preferences.interfaceDensity = "compact"
+                    }
                 }
             }
 
@@ -248,6 +360,98 @@ Item {
                 }
             }
 
+            Rectangle {
+                visible: root.pendingChanges.length > 0
+                width: parent.width
+                height: 76 + mutationList.height
+                radius: 14
+                color: theme.backgroundDeep
+                border.width: 1
+                border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.11)
+
+                Column {
+                    anchors { fill: parent; margins: 18 }
+                    spacing: 10
+                    Text {
+                        text: "Queued changes"
+                        color: theme.foreground
+                        font.pixelSize: theme.baseFontSize + 2
+                        font.weight: Font.DemiBold
+                    }
+                    Text {
+                        text: "Changes are stored locally until Google confirms them. Failed changes stay here for review."
+                        color: theme.foregroundMuted
+                        font.pixelSize: theme.baseFontSize - 1
+                    }
+                    ListView {
+                        id: mutationList
+                        width: parent.width
+                        height: Math.min(count, 3) * 82
+                        model: root.pendingChanges
+                        clip: true
+                        spacing: 6
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: mutationList.width
+                            height: 76
+                            radius: 9
+                            color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.045)
+                            RowLayout {
+                                anchors { fill: parent; margins: 10 }
+                                spacing: 10
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 3
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.operationLabel(modelData.operation) + " · " + modelData.title
+                                        color: theme.foreground
+                                        font.pixelSize: theme.baseFontSize
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.calendarName + " · " + modelData.state
+                                              + (modelData.attemptCount ? " · attempt " + modelData.attemptCount : "")
+                                        color: modelData.state === "failed" || modelData.state === "conflict"
+                                               ? theme.red : theme.foregroundMuted
+                                        font.pixelSize: Math.max(10, theme.baseFontSize - 2)
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        visible: !!modelData.lastError
+                                        Layout.fillWidth: true
+                                        text: modelData.lastError || ""
+                                        color: theme.foregroundMuted
+                                        font.pixelSize: Math.max(10, theme.baseFontSize - 2)
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                                CalendarButton {
+                                    visible: modelData.canRetry
+                                    text: "Retry"
+                                    selected: true
+                                    onClicked: {
+                                        eventStore.retryMutation(modelData.id)
+                                        root.refreshPendingChanges()
+                                    }
+                                }
+                                CalendarButton {
+                                    visible: modelData.canDiscard
+                                    text: "Discard"
+                                    onClicked: {
+                                        root.discardCandidate = modelData
+                                        discardDialog.open()
+                                    }
+                                }
+                            }
+                        }
+                        ScrollBar.vertical: ScrollBar {}
+                    }
+                }
+            }
+
             Text {
                 visible: (syncStatus.lastError && syncStatus.lastError.length > 0)
                          || (mutationStatus.lastError && mutationStatus.lastError.length > 0)
@@ -266,6 +470,262 @@ Item {
                 font.pixelSize: theme.baseFontSize
                 lineHeight: 1.35
                 wrapMode: Text.WordWrap
+            }
+            Row {
+                width: parent.width
+                spacing: 10
+                CalendarButton {
+                    text: root.diagnosticsCopied ? "✓ Diagnostics copied" : "Copy redacted diagnostics"
+                    selected: root.diagnosticsCopied
+                    onClicked: {
+                        root.diagnosticsCopied = eventStore.copyDiagnostics()
+                        diagnosticsReset.restart()
+                    }
+                }
+                CalendarButton {
+                    text: "Show welcome guide"
+                    onClicked: root.showOnboarding()
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(180, parent.width - 390)
+                    text: "Includes versions, counts, sync state, and errors. Excludes tokens, event content, and account identity."
+                    color: theme.foregroundMuted
+                    font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                    wrapMode: Text.WordWrap
+                }
+            }
+            Column {
+                width: parent.width
+                spacing: 8
+                Flow {
+                    width: parent.width
+                    spacing: 10
+                    CalendarButton {
+                        text: "Website"
+                        accessibleName: "Open the Omarchy Calendar website"
+                        onClicked: Qt.openUrlExternally(releaseInfo.homepageUrl)
+                    }
+                    CalendarButton {
+                        text: "Privacy policy"
+                        accessibleName: "Open Omarchy Calendar privacy policy"
+                        onClicked: Qt.openUrlExternally(releaseInfo.privacyUrl)
+                    }
+                    CalendarButton {
+                        text: "Terms"
+                        accessibleName: "Open Omarchy Calendar terms of use"
+                        onClicked: Qt.openUrlExternally(releaseInfo.termsUrl)
+                    }
+                    CalendarButton {
+                        text: "Email support"
+                        accessibleName: "Email Omarchy Calendar support"
+                        onClicked: Qt.openUrlExternally("mailto:" + releaseInfo.supportEmail)
+                    }
+                }
+                Text {
+                    width: parent.width
+                    text: "Google data stays on this computer and is never sent to a project server."
+                    color: theme.foregroundMuted
+                    font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                    wrapMode: Text.WordWrap
+                }
+            }
+                        Item { width: 1; height: 12 }
+                        }
+                    }
+                }
+
+                Item {
+                    anchors.fill: parent
+                    visible: root.currentSection === "about"
+
+                    ScrollView {
+                        id: aboutScroll
+                        anchors { fill: parent; margins: 28 }
+                        contentWidth: availableWidth
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        Column {
+                            width: aboutScroll.availableWidth
+                            spacing: 22
+
+                            Column {
+                                width: parent.width
+                                spacing: 6
+                                Text {
+                                    text: "About"
+                                    color: theme.foreground
+                                    font.pixelSize: theme.baseFontSize + 8
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    text: "Product information, version details, and privacy resources."
+                                    color: theme.foregroundMuted
+                                    font.pixelSize: theme.baseFontSize
+                                }
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 330
+                                radius: 16
+                                color: theme.backgroundDeep
+                                border.width: 1
+                                border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.11)
+
+                                Column {
+                                    anchors { fill: parent; margins: 24 }
+                                    spacing: 20
+
+                                    Row {
+                                        width: parent.width
+                                        spacing: 18
+                                        Rectangle {
+                                            width: 64
+                                            height: 64
+                                            radius: 16
+                                            color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.17)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "OC"
+                                                color: theme.accent
+                                                font.pixelSize: theme.baseFontSize + 11
+                                                font.weight: Font.Bold
+                                            }
+                                        }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 5
+                                            Text {
+                                                text: releaseInfo.appName || "Omarchy Calendar"
+                                                color: theme.foreground
+                                                font.pixelSize: theme.baseFontSize + 7
+                                                font.weight: Font.DemiBold
+                                            }
+                                            Text {
+                                                text: "Version " + (releaseInfo.version || "Unknown")
+                                                color: theme.foregroundMuted
+                                                font.pixelSize: theme.baseFontSize + 1
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 1
+                                        color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.09)
+                                    }
+
+                                    Column {
+                                        width: parent.width
+                                        spacing: 6
+                                        Text {
+                                            text: "A product of"
+                                            color: theme.foregroundMuted
+                                            font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                                        }
+                                        Text {
+                                            text: releaseInfo.publisher || "Last Refuge Software, LLC."
+                                            color: theme.foreground
+                                            font.pixelSize: theme.baseFontSize + 3
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    Flow {
+                                        width: parent.width
+                                        spacing: 10
+                                        CalendarButton {
+                                            text: releaseInfo.publisherUrl || "https://lastrefuge.ai"
+                                            accessibleName: "Open Last Refuge website"
+                                            outlined: true
+                                            onClicked: Qt.openUrlExternally(releaseInfo.publisherUrl || "https://lastrefuge.ai")
+                                        }
+                                        CalendarButton {
+                                            text: "Privacy policy"
+                                            accessibleName: "Open Omarchy Calendar privacy policy"
+                                            outlined: true
+                                            onClicked: Qt.openUrlExternally(releaseInfo.privacyUrl || "https://lastrefuge.ai/privacy")
+                                        }
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: releaseInfo.privacyUrl || "https://lastrefuge.ai/privacy"
+                                        color: theme.foregroundMuted
+                                        font.pixelSize: Math.max(10, theme.baseFontSize - 1)
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Omarchy Calendar is designed and maintained by Last Refuge Software, LLC."
+                                color: theme.foregroundMuted
+                                font.pixelSize: theme.baseFontSize
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: diagnosticsReset
+        interval: 3000
+        onTriggered: root.diagnosticsCopied = false
+    }
+
+    Popup {
+        id: discardDialog
+        parent: root
+        anchors.centerIn: parent
+        width: 430
+        height: 215
+        modal: true
+        dim: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.46) }
+        background: Rectangle {
+            radius: 14
+            color: theme.backgroundDeep
+            border.width: 1
+            border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.16)
+        }
+        contentItem: Column {
+            x: 24; y: 22; width: parent.width - 48; spacing: 12
+            Text {
+                text: "Discard this local change?"
+                color: theme.foreground
+                font.pixelSize: theme.baseFontSize + 4
+                font.weight: Font.DemiBold
+            }
+            Text {
+                width: 382
+                text: "“" + (root.discardCandidate.title || "Untitled event")
+                      + "” will return to Google’s saved version after synchronization. An event that was never uploaded will be removed."
+                color: theme.foregroundMuted
+                font.pixelSize: theme.baseFontSize
+                wrapMode: Text.WordWrap
+            }
+            Row {
+                spacing: 8
+                CalendarButton { text: "Keep change"; onClicked: discardDialog.close() }
+                CalendarButton {
+                    text: "Discard"
+                    selected: true
+                    accentColor: theme.red
+                    onClicked: {
+                        eventStore.discardMutation(root.discardCandidate.id)
+                        discardDialog.close()
+                        root.refreshPendingChanges()
+                    }
+                }
             }
         }
     }

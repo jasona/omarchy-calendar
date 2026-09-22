@@ -10,19 +10,25 @@ SQLite schema can evolve independently.
 | Method | Result |
 | --- | --- |
 | `GetEvents(firstDate, lastDate)` | Events whose local `dateKey` is in the inclusive ISO date range |
-| `SearchEvents(queryText, limit)` | Case-insensitive title, location, and calendar-name matches |
+| `SearchEvents(queryText, limit)` | Full-text event search with structured calendar, date, organizer, and response filters |
 | `GetCalendars()` | Calendar identity, color, provider metadata, access role, timezone, and sync-selection state |
 | `GetAccounts()` | Provider accounts, enabled state, synchronization state, and errors |
 | `GetNextEvent()` | First non-all-day event whose end time is in the future |
 | `GetStatus()` | Schema version, database path, counts, feed timestamp, and last error |
+| `GetPendingMutations()` | Durable queued changes, states, attempts, errors, and available recovery actions |
 | `GetProviderStatus()` | Google OAuth state plus synchronization and mutation-upload progress, connectivity, retry timing, pending count, and the latest error |
+| `GetDiagnostics()` | Indented redacted diagnostic JSON without tokens, event content, paths, or account identity |
 | `BeginGoogleAuthorization()` | Starts the loopback OAuth flow; returns false when client credentials or the callback listener are unavailable |
 | `DisconnectGoogle()` | Removes the Google account, its cached calendars and events, and its refresh token from Secret Service |
 | `SetCalendarSelected(calendarId, selected)` | Pauses or resumes a Google calendar, updates visible queries and the compatibility feed, and syncs when resumed |
 | `CreateEvent(eventJson)` | Optimistically stores a new event and atomically queues its Google create mutation; returns its local event ID |
 | `UpdateEvent(eventJson)` | Optimistically updates one event and atomically queues or coalesces its Google update mutation |
+| `RespondToInvitation(calendarId, eventId, responseStatus)` | Optimistically records accepted, tentative, or declined and queues the RSVP mutation |
 | `DeleteEvent(calendarId, eventId)` | Optimistically removes an event and returns a token that remains undoable for six seconds |
+| `DeleteEventScoped(eventJson)` | Deletes one occurrence, this and following, or an entire recurring series |
 | `UndoDelete(mutationId)` | Restores an event while its delete token remains in the undo window |
+| `RetryMutation(mutationId)` | Requeues a failed, conflicted, blocked, or retrying mutation |
+| `DiscardMutation(mutationId)` | Removes a safe queued mutation and restores provider state on the next sync |
 | `SyncNow()` | Starts Calendar List and Events synchronization when an authenticated Google access token is available |
 | `Reload()` | Transactionally re-import the compatibility feed |
 

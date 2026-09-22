@@ -3,6 +3,8 @@ import QtQuick.Controls
 
 Item {
     id: root
+    Accessible.role: Accessible.List
+    Accessible.name: "Upcoming agenda"
     property var anchorDate: new Date()
     property var hiddenCalendarIds: []
     property var events: []
@@ -78,11 +80,16 @@ Item {
             }
 
             delegate: Item {
+                id: agendaItem
                 required property var modelData
                 required property int index
                 property bool startsDay: index === 0 || root.visibleEvents[index - 1].dateKey !== modelData.dateKey
                 width: list.width
                 height: 76 + (startsDay ? 38 : 0)
+                Accessible.role: Accessible.ListItem
+                Accessible.name: (modelData.title || "Untitled event") + ", "
+                                 + root.eventTimeLabel(modelData) + ", " + (modelData.calendarName || "")
+                Accessible.onPressAction: root.eventSelected(modelData)
 
                 Text {
                     visible: startsDay

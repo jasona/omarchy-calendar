@@ -3,12 +3,46 @@ import QtQuick.Controls
 
 Item {
     id: root
+    Accessible.role: Accessible.Pane
+    Accessible.name: "Calendar search"
     property var hiddenCalendarIds: []
     property var results: []
     property var visibleResults: results.filter(function(item) {
         return root.hiddenCalendarIds.indexOf(item.calendarId) < 0
     })
     signal eventSelected(var eventData)
+
+    function plainTerm() {
+        return query.text.replace(/\b(calendar|after|before|organizer|response):(?:"[^"]+"|\S+)/gi, "")
+            .trim()
+    }
+
+    function escaped(value) {
+        return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    }
+
+    function highlighted(value) {
+        let safe = escaped(value)
+        let term = plainTerm()
+        if (!term.length) return safe
+        let pattern = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        return safe.replace(new RegExp("(" + pattern + ")", "ig"),
+                            "<span style='color:" + theme.accent + ";font-weight:600'>$1</span>")
+    }
+
+    function matchContext(eventData) {
+        let term = plainTerm().toLowerCase()
+        if (!term.length) return ""
+        if ((eventData.description || "").toLowerCase().indexOf(term) >= 0)
+            return eventData.description
+        let attendees = eventData.attendees || []
+        for (let attendee of attendees) {
+            let label = attendee.displayName || attendee.email || ""
+            if (label.toLowerCase().indexOf(term) >= 0) return label
+        }
+        return ""
+    }
 
     function search() {
         results = query.text.trim().length ? eventStore.searchEvents(query.text, 100) : []
@@ -47,7 +81,9 @@ Item {
             height: 48
             leftPadding: 18
             rightPadding: 18
-            placeholderText: "Search titles, locations, and calendars"
+            placeholderText: "Search events or use calendar:, after:, organizer:, response:"
+            Accessible.name: "Search events"
+            Accessible.description: "Search titles, notes, guests, organizers, locations, and calendars"
             color: theme.foreground
             placeholderTextColor: theme.foregroundMuted
             selectionColor: theme.accent
@@ -98,10 +134,11 @@ Item {
             }
 
             delegate: Rectangle {
+                id: searchResult
                 required property var modelData
                 required property int index
                 width: resultsList.width
-                height: 70
+                height: root.matchContext(modelData).length ? 88 : 70
                 radius: 11
                 color: pointer.containsMouse
                        ? Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.075)
@@ -110,6 +147,11 @@ Item {
                 border.color: index === resultsList.currentIndex && resultsList.activeFocus
                               ? theme.accent
                               : Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.08)
+                Accessible.role: Accessible.ListItem
+                Accessible.name: (modelData.title || "Untitled event") + ", "
+                                 + (modelData.allDay ? "all day" : Qt.formatTime(new Date(modelData.startMs), "h:mm AP"))
+                                 + ", " + (modelData.calendarName || "")
+                Accessible.onPressAction: root.eventSelected(modelData)
 
                 Rectangle {
                     anchors { left: parent.left; top: parent.top; bottom: parent.bottom; margins: 8 }
@@ -121,7 +163,8 @@ Item {
                     spacing: 5
                     Text {
                         width: parent.width
-                        text: modelData.title || "Untitled event"
+                        text: root.highlighted(modelData.title || "Untitled event")
+                        textFormat: Text.RichText
                         color: theme.foreground
                         font.pixelSize: theme.baseFontSize + 1
                         font.weight: Font.DemiBold
@@ -136,6 +179,15 @@ Item {
                               + "  ·  " + (modelData.location || modelData.calendarName)
                         color: theme.foregroundMuted
                         font.pixelSize: theme.baseFontSize - 1
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        width: parent.width
+                        visible: root.matchContext(modelData).length > 0
+                        text: root.highlighted(root.matchContext(modelData))
+                        textFormat: Text.RichText
+                        color: theme.foregroundMuted
+                        font.pixelSize: Math.max(10, theme.baseFontSize - 1)
                         elide: Text.ElideRight
                     }
                 }
@@ -160,7 +212,8 @@ Item {
             spacing: 7
             visible: query.text.length === 0
             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Find anything"; color: theme.foreground; font.pixelSize: theme.baseFontSize + 5; font.weight: Font.DemiBold }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Search events by title, location, or calendar."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Search titles, notes, guests, organizers, locations, or calendars."; color: theme.foregroundMuted; font.pixelSize: theme.baseFontSize }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Filters: calendar:Work  after:2026-09-01  organizer:alex  response:accepted"; color: theme.foregroundMuted; font.pixelSize: Math.max(10, theme.baseFontSize - 1) }
         }
 
         Text {

@@ -2,6 +2,8 @@ import QtQuick
 
 Item {
     id: root
+    Accessible.role: Accessible.Pane
+    Accessible.name: "Month calendar"
     property var monthDate: new Date()
     property var monthEvents: []
     property var hiddenCalendarIds: []
@@ -140,6 +142,10 @@ Item {
                     property var dayEvents: root.eventsForDate(dayDate)
                     property bool inMonth: dayDate.getMonth() === root.monthDate.getMonth()
                     property bool isToday: Qt.formatDate(dayDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
+                    Accessible.role: Accessible.Button
+                    Accessible.name: Qt.formatDate(dayDate, "dddd, MMMM d, yyyy")
+                                     + ", " + dayEvents.length + " event" + (dayEvents.length === 1 ? "" : "s")
+                    Accessible.onPressAction: root.dayActivated(dayDate)
                     width: monthGrid.width / 7
                     height: monthGrid.height / 6
                     color: cellPointer.containsMouse
@@ -182,11 +188,16 @@ Item {
                         Repeater {
                             model: dayCell.dayEvents.slice(0, 3)
                             delegate: Rectangle {
+                                id: monthEvent
                                 required property var modelData
                                 width: parent.width
                                 height: 20
                                 radius: 5
                                 color: "transparent"
+                                Accessible.role: Accessible.Button
+                                Accessible.name: (modelData.title || "Untitled event") + ", "
+                                                 + (modelData.allDay ? "all day" : Qt.formatTime(new Date(modelData.startMs), "h:mm AP"))
+                                Accessible.onPressAction: root.eventSelected(modelData)
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: parent.radius

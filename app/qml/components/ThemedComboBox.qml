@@ -3,7 +3,9 @@ import QtQuick.Controls
 
 ComboBox {
     id: control
-    implicitHeight: 42
+    property string accessibleName: "Options"
+    Accessible.name: accessibleName
+    implicitHeight: Math.round(42 * (preferences.interfaceDensity === "compact" ? 0.88 : 1))
     leftPadding: 13
     rightPadding: 38
     font.family: "Inter"
@@ -28,7 +30,7 @@ ComboBox {
     }
 
     background: Rectangle {
-        radius: 9
+        radius: theme.controlRadius
         color: control.activeFocus || control.down
                ? Qt.rgba(theme.surfaceRaised.r, theme.surfaceRaised.g, theme.surfaceRaised.b, 0.94)
                : theme.surface
@@ -43,7 +45,7 @@ ComboBox {
         required property var modelData
         required property int index
         width: control.width - 8
-        height: 38
+        height: Math.round(38 * (preferences.interfaceDensity === "compact" ? 0.88 : 1))
         highlighted: control.highlightedIndex === index
         contentItem: Text {
             text: option.modelData[control.textRole]
@@ -75,7 +77,7 @@ ComboBox {
             ScrollIndicator.vertical: ScrollIndicator { }
         }
         background: Rectangle {
-            radius: 10
+            radius: theme.controlRadius + 1
             color: theme.backgroundDeep
             border.width: 1
             border.color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)

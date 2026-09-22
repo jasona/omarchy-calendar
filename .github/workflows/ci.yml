@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 30
+    steps:
+      - name: Install build dependencies
+        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git glib2 jq libsecret ninja qt6-base qt6-declarative qt6-networkauth
+      - uses: actions/checkout@v4
+      - name: Verify production install tree
+        run: ./tests/test-package-install.sh
+      - name: Build service for integration contracts
+        run: cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build-ci
+      - name: Render visual smoke matrix
+        run: ./tests/capture-visual-baseline.sh "$PWD/build-ci/omarchy-calendar" "$PWD/build-ci/omarchy-calendar-service" /tmp/omarchy-calendar-visuals
+      - name: Run contracts
+        run: ./tests/run-contract-tests.sh "$PWD/build-ci/omarchy-calendar-service"

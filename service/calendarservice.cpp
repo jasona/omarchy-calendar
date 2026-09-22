@@ -6,8 +6,14 @@
 #include "googlemutations.h"
 
 #include <QFile>
+#include <QDBusInterface>
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QCoreApplication>
+#include <QDir>
 #include <QTimer>
 
 CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, GoogleSync &googleSync,
@@ -21,6 +27,9 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
     , m_feedPath(std::move(feedPath))
 {
     if (!m_database.finalizeUndoableDeletes())
+        qWarning().noquote() << m_database.lastError();
+    if (!m_database.pruneReminderDeliveries(
+            QDateTime::currentMSecsSinceEpoch() - qint64(7) * 24 * 60 * 60 * 1000))
         qWarning().noquote() << m_database.lastError();
     m_mutationUploadDelay.setSingleShot(true);
     m_mutationUploadDelay.setInterval(450);
@@ -59,6 +68,7 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
                 qWarning().noquote() << m_database.lastError();
             ensureWatching();
             emit EventsChanged();
+            notifyNewInvitations();
         }
     });
     connect(&m_googleMutations, &GoogleMutations::stateChanged,
@@ -77,7 +87,110 @@ CalendarService::CalendarService(Database &database, GoogleAuth &googleAuth, Goo
     syncTimer->setInterval(5 * 60 * 1000);
     connect(syncTimer, &QTimer::timeout, this, [this] { SyncNow(); });
     syncTimer->start();
+    m_reminderTimer.setInterval(30000);
+    connect(&m_reminderTimer, &QTimer::timeout, this, &CalendarService::checkReminders);
+    QDBusConnection::sessionBus().connect(QStringLiteral("org.freedesktop.Notifications"),
+        QStringLiteral("/org/freedesktop/Notifications"),
+        QStringLiteral("org.freedesktop.Notifications"), QStringLiteral("ActionInvoked"),
+        this, SLOT(notificationActionInvoked(uint,QString)));
+    m_reminderTimer.start();
+    QTimer::singleShot(1000, this, &CalendarService::checkReminders);
     ensureWatching();
+}
+
+void CalendarService::checkReminders()
+{
+    QDBusInterface notifications(QStringLiteral("org.freedesktop.Notifications"),
+                                 QStringLiteral("/org/freedesktop/Notifications"),
+                                 QStringLiteral("org.freedesktop.Notifications"));
+    if (!notifications.isValid()) return;
+    const QJsonArray reminders = m_database.dueReminders(QDateTime::currentMSecsSinceEpoch()).array();
+    for (const QJsonValue &value : reminders) {
+        const QJsonObject reminder = value.toObject();
+        const QDateTime start = QDateTime::fromMSecsSinceEpoch(
+            qint64(reminder.value(QStringLiteral("startMs")).toDouble()));
+        const QString when = reminder.value(QStringLiteral("allDay")).toBool()
+            ? start.date().toString(QStringLiteral("ddd, MMM d")) + QStringLiteral(" · all day")
+            : start.toString(QStringLiteral("h:mm AP"));
+        const bool hasJoin = !reminder.value(QStringLiteral("meetingLinks")).toArray().isEmpty();
+        QStringList actions { QStringLiteral("default"), QStringLiteral("Open") };
+        if (hasJoin) actions << QStringLiteral("join") << QStringLiteral("Join");
+        actions << QStringLiteral("snooze") << QStringLiteral("Snooze 10 min")
+                << QStringLiteral("dismiss") << QStringLiteral("Dismiss");
+        QVariantMap hints;
+        hints.insert(QStringLiteral("category"), QStringLiteral("x-omarchy-calendar.reminder"));
+        hints.insert(QStringLiteral("desktop-entry"), QStringLiteral("org.omarchy.Calendar"));
+        const QDBusMessage response = notifications.call(QStringLiteral("Notify"),
+            QStringLiteral("Omarchy Calendar"), uint(0), QStringLiteral("org.omarchy.Calendar"),
+            reminder.value(QStringLiteral("title")).toString(QStringLiteral("Calendar reminder")),
+            when + QStringLiteral(" · ") + reminder.value(QStringLiteral("calendarName")).toString(),
+            actions, hints, 0);
+        if (response.type() == QDBusMessage::ReplyMessage && !response.arguments().isEmpty()) {
+            const uint notificationId = response.arguments().first().toUInt();
+            if (m_database.markReminderDelivered(
+                    reminder.value(QStringLiteral("id")).toString(), notificationId))
+                m_activeReminders.insert(notificationId, reminder);
+        }
+    }
+}
+
+void CalendarService::notificationActionInvoked(uint notificationId, const QString &actionKey)
+{
+    const QString reminderId = m_database.reminderIdForNotification(notificationId);
+    if (reminderId.isEmpty()) return;
+    const QJsonObject reminder = m_activeReminders.value(notificationId);
+    if (actionKey == QStringLiteral("snooze")) {
+        m_database.snoozeReminder(reminderId, QDateTime::currentMSecsSinceEpoch() + 10 * 60 * 1000);
+    } else {
+        m_database.dismissReminder(reminderId);
+        if (actionKey == QStringLiteral("join")) {
+            const QJsonArray links = reminder.value(QStringLiteral("meetingLinks")).toArray();
+            if (!links.isEmpty()) {
+                QProcess::startDetached(QStringLiteral("xdg-open"),
+                    { links.first().toObject().value(QStringLiteral("uri")).toString() });
+            } else {
+                openCalendarApp();
+            }
+        } else if (actionKey == QStringLiteral("open") || actionKey == QStringLiteral("default")) {
+            openCalendarApp();
+        }
+    }
+    m_activeReminders.remove(notificationId);
+}
+
+void CalendarService::openCalendarApp()
+{
+    QString executable = QStandardPaths::findExecutable(QStringLiteral("omarchy-calendar"));
+    if (executable.isEmpty()) {
+        executable = QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../build-qmake/omarchy-calendar"));
+    }
+    QProcess::startDetached(executable, {});
+}
+
+void CalendarService::notifyNewInvitations()
+{
+    QDBusInterface notifications(QStringLiteral("org.freedesktop.Notifications"),
+                                 QStringLiteral("/org/freedesktop/Notifications"),
+                                 QStringLiteral("org.freedesktop.Notifications"));
+    if (!notifications.isValid()) return;
+    const QJsonArray invitations = m_database.takeNewInvitations().array();
+    if (invitations.isEmpty()) return;
+    for (const QJsonValue &value : invitations) {
+        const QJsonObject invitation = value.toObject();
+        const QDateTime start = QDateTime::fromMSecsSinceEpoch(
+            qint64(invitation.value(QStringLiteral("startMs")).toDouble()));
+        const QString when = invitation.value(QStringLiteral("allDay")).toBool()
+            ? start.date().toString(QStringLiteral("ddd, MMM d")) + QStringLiteral(" · all day")
+            : start.toString(QStringLiteral("ddd, MMM d · h:mm AP"));
+        notifications.call(QDBus::NoBlock, QStringLiteral("Notify"),
+                           QStringLiteral("Omarchy Calendar"), uint(0),
+                           QStringLiteral("org.omarchy.Calendar"),
+                           QStringLiteral("Calendar invitation"),
+                           invitation.value(QStringLiteral("title")).toString()
+                               + QStringLiteral("\n") + when,
+                           QStringList {}, QVariantMap {}, 10000);
+    }
 }
 
 void CalendarService::ensureWatching()
@@ -122,12 +235,32 @@ QString CalendarService::GetStatus() const
     return QString::fromUtf8(m_database.status().toJson(QJsonDocument::Compact));
 }
 
+QString CalendarService::GetPendingMutations() const
+{
+    return QString::fromUtf8(m_database.pendingMutations().toJson(QJsonDocument::Compact));
+}
+
 QString CalendarService::GetProviderStatus() const
 {
     QJsonObject status = m_googleAuth.status().object();
     status.insert(QStringLiteral("sync"), m_googleSync.status().object());
     status.insert(QStringLiteral("mutations"), m_googleMutations.status().object());
     return QString::fromUtf8(QJsonDocument(status).toJson(QJsonDocument::Compact));
+}
+
+QString CalendarService::GetDiagnostics() const
+{
+    QJsonObject database = m_database.status().object();
+    database.remove(QStringLiteral("databasePath"));
+    QJsonObject result {
+        { QStringLiteral("application"), QStringLiteral("Omarchy Calendar") },
+        { QStringLiteral("version"), QCoreApplication::applicationVersion() },
+        { QStringLiteral("generatedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs) },
+        { QStringLiteral("database"), database },
+        { QStringLiteral("provider"), QJsonDocument::fromJson(GetProviderStatus().toUtf8()).object() },
+        { QStringLiteral("serviceBacked"), true }
+    };
+    return QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Indented));
 }
 
 bool CalendarService::BeginGoogleAuthorization()
@@ -191,6 +324,17 @@ bool CalendarService::UpdateEvent(const QString &eventJson)
     return true;
 }
 
+bool CalendarService::RespondToInvitation(const QString &calendarId, const QString &eventId,
+                                          const QString &responseStatus)
+{
+    if (!m_database.respondPendingEvent(calendarId, eventId, responseStatus)) return false;
+    emit EventsChanged();
+    emit ProviderStatusChanged();
+    if (m_googleAuth.writeAccessAvailable())
+        m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+    return true;
+}
+
 QString CalendarService::DeleteEvent(const QString &calendarId, const QString &eventId)
 {
     return DeleteEventScoped(QString::fromUtf8(QJsonDocument(QJsonObject {
@@ -228,6 +372,28 @@ bool CalendarService::UndoDelete(const QString &mutationId)
     ensureWatching();
     emit EventsChanged();
     emit ProviderStatusChanged();
+    return true;
+}
+
+bool CalendarService::RetryMutation(const QString &mutationId)
+{
+    if (!m_database.retryMutation(mutationId)) return false;
+    m_googleMutations.cancel();
+    emit ProviderStatusChanged();
+    return !m_googleAuth.writeAccessAvailable()
+        || m_googleMutations.start(m_googleAuth.currentAccountId(), m_googleAuth.accessToken());
+}
+
+bool CalendarService::DiscardMutation(const QString &mutationId)
+{
+    m_googleMutations.cancel();
+    if (!m_database.discardMutation(mutationId)) return false;
+    if (!m_database.exportCompatibilityFeed(m_feedPath))
+        qWarning().noquote() << m_database.lastError();
+    ensureWatching();
+    emit EventsChanged();
+    emit ProviderStatusChanged();
+    SyncNow();
     return true;
 }
 

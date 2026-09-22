@@ -6,6 +6,10 @@
       "summary": "Design review",
       "description": "Review the new calendar",
       "location": "Room 2",
+      "organizer": { "email": "owner@example.com", "displayName": "Calendar Owner", "self": true },
+      "attendees": [
+        { "email": "ada@example.com", "displayName": "Ada", "responseStatus": "accepted" }
+      ],
       "status": "confirmed",
       "transparency": "opaque",
       "etag": "full-1",

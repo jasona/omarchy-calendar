@@ -34,6 +34,7 @@ private:
     void handleFutureTruncateReply(QNetworkReply *reply);
     void fetchCurrentEvent();
     void fail(const QString &message, int httpStatus);
+    void stopForStorageError();
     void complete();
 
     Database &m_database;

@@ -18,6 +18,10 @@ class ThemeProvider final : public QObject
     Q_PROPERTY(QColor green READ green NOTIFY themeChanged)
     Q_PROPERTY(QColor cyan READ cyan NOTIFY themeChanged)
     Q_PROPERTY(int baseFontSize READ baseFontSize NOTIFY themeChanged)
+    Q_PROPERTY(int controlRadius READ controlRadius CONSTANT)
+    Q_PROPERTY(int cardRadius READ cardRadius CONSTANT)
+    Q_PROPERTY(int panelRadius READ panelRadius CONSTANT)
+    Q_PROPERTY(int standardSpacing READ standardSpacing CONSTANT)
 
 public:
     explicit ThemeProvider(QObject *parent = nullptr);
@@ -33,6 +37,10 @@ public:
     QColor green() const { return m_green; }
     QColor cyan() const { return m_cyan; }
     int baseFontSize() const { return m_baseFontSize; }
+    int controlRadius() const { return 9; }
+    int cardRadius() const { return 14; }
+    int panelRadius() const { return 18; }
+    int standardSpacing() const { return 10; }
 
 signals:
     void themeChanged();

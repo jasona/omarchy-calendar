@@ -1,6 +1,18 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(omarchy-calendar VERSION 0.1.0 LANGUAGES CXX)
+project(omarchy-calendar VERSION 0.9.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+set(OMARCHY_CALENDAR_OAUTH_ENV_FILE "" CACHE FILEPATH
+    "Optional production Google OAuth environment file to install")
+set(OMARCHY_CALENDAR_HOMEPAGE_URL "https://lastrefuge.ai/projects/omarchy-calendar" CACHE STRING
+    "Public product homepage used by the application")
+set(OMARCHY_CALENDAR_PRIVACY_URL "https://lastrefuge.ai/privacy" CACHE STRING
+    "Public privacy policy used by the application")
+set(OMARCHY_CALENDAR_TERMS_URL "https://lastrefuge.ai/terms" CACHE STRING
+    "Public terms of use used by the application")
+set(OMARCHY_CALENDAR_SUPPORT_EMAIL "jason@greatspark.com" CACHE STRING
+    "Public support email used by the application")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,26 +31,21 @@ qt_add_executable(omarchy-calendar
     app/main.cpp
     app/preferences.cpp
     app/preferences.h
+    app/quickentryparser.cpp
+    app/quickentryparser.h
     app/themeprovider.cpp
     app/themeprovider.h
+    app/timezonehelper.cpp
+    app/timezonehelper.h
+    app/version.h
+    app/resources/qml.qrc
 )
 
-qt_add_resources(omarchy-calendar qml
-    PREFIX "/"
-    BASE app
-    FILES
-        app/qml/App.qml
-        app/qml/components/CalendarButton.qml
-        app/qml/components/EventCard.qml
-        app/qml/components/ThemedTextField.qml
-        app/qml/components/ThemedTextArea.qml
-        app/qml/components/ThemedComboBox.qml
-        app/qml/views/WeekView.qml
-        app/qml/views/DayView.qml
-        app/qml/views/MonthView.qml
-        app/qml/views/AgendaView.qml
-        app/qml/views/SearchView.qml
-        app/qml/views/SettingsView.qml
+target_compile_definitions(omarchy-calendar PRIVATE
+    OMARCHY_CALENDAR_HOMEPAGE_URL="${OMARCHY_CALENDAR_HOMEPAGE_URL}"
+    OMARCHY_CALENDAR_PRIVACY_URL="${OMARCHY_CALENDAR_PRIVACY_URL}"
+    OMARCHY_CALENDAR_TERMS_URL="${OMARCHY_CALENDAR_TERMS_URL}"
+    OMARCHY_CALENDAR_SUPPORT_EMAIL="${OMARCHY_CALENDAR_SUPPORT_EMAIL}"
 )
 
 target_link_libraries(omarchy-calendar PRIVATE
@@ -62,8 +69,11 @@ qt_add_executable(omarchy-calendar-service
     service/googlesync.cpp
     service/googlesync.h
     service/main.cpp
+    service/recurrence.cpp
+    service/recurrence.h
     service/secretstore.cpp
     service/secretstore.h
+    app/version.h
 )
 
 target_link_libraries(omarchy-calendar-service PRIVATE
@@ -75,4 +85,22 @@ target_link_libraries(omarchy-calendar-service PRIVATE
     PkgConfig::LIBSECRET
 )
 
-install(TARGETS omarchy-calendar omarchy-calendar-service RUNTIME DESTINATION bin)
+install(TARGETS omarchy-calendar omarchy-calendar-service
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES packaging/desktop/org.omarchy.Calendar.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES packaging/icons/org.omarchy.Calendar.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES packaging/metainfo/org.omarchy.Calendar.metainfo.xml
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+install(FILES packaging/dbus/org.omarchy.Calendar.service
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+install(FILES packaging/systemd/omarchy-calendar.service
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
+install(FILES README.md CHANGELOG.md LICENSE SECURITY.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/omarchy-calendar)
+if(OMARCHY_CALENDAR_OAUTH_ENV_FILE)
+    install(FILES ${OMARCHY_CALENDAR_OAUTH_ENV_FILE}
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/omarchy-calendar
+        RENAME google-oauth.env)
+endif()

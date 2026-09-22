@@ -176,7 +176,7 @@ int main(int argc, char **argv)
     {
         Database migrated(migrationPath);
         if (!migrated.open()
-            || migrated.status().object().value(QStringLiteral("schemaVersion")).toInt() != 7
+            || migrated.status().object().value(QStringLiteral("schemaVersion")).toInt() != 10
             || migrated.eventsForRange(QStringLiteral("2025-12-31"),
                                        QStringLiteral("2026-01-01")).array().size() != 2
             || !migrated.eventsForRange(QStringLiteral("2026-01-02"),

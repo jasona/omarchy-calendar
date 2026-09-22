@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Privacy policy for Omarchy Calendar."><title>Privacy · Omarchy Calendar</title><link rel="stylesheet" href="site.css"></head>
+<body>
+  <nav class="wrap"><a class="brand" href="index.html"><span class="mark">O</span>Omarchy Calendar</a><div class="navlinks"><a href="roadmap.html">Roadmap</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="https://github.com/jasona/omarchy-calendar">GitHub</a></div></nav>
+  <main class="legal">
+    <div class="eyebrow">Your data stays yours</div><h1>Privacy policy</h1><p class="meta">Effective September 21, 2026</p>
+    <p>Omarchy Calendar is an open-source desktop application. This policy explains how the application accesses, uses, stores, shares, and deletes Google user data.</p>
+    <h2>Data the application accesses</h2>
+    <p>When you connect Google Calendar, the application requests OpenID and email access to identify and label the connected account, permission to read your Google Calendar list, and permission to read and manage calendar events. Calendar data includes calendar names and settings; event titles, times, notes, locations, guests, responses, reminders, recurrence, conference details, and related identifiers. The application does not request the broader Google profile scope.</p>
+    <h2>How data is used</h2>
+    <p>Google user data is used only to provide visible calendar features: showing and searching calendars, synchronizing events for offline use, creating and changing events at your direction, handling invitations, displaying meeting details, and delivering reminders. It is not used for advertising, credit decisions, surveillance, or training generalized artificial-intelligence models.</p>
+    <h2>Storage and security</h2>
+    <p>Calendar and account metadata are stored in a SQLite database under <code>~/.local/share/omarchy-calendar</code> on your computer. Google refresh tokens are stored through the desktop Secret Service rather than in that database. Network requests go directly between the application and Google APIs over HTTPS. The project does not operate an intermediary sync server.</p>
+    <h2>Sharing and transfers</h2>
+    <p>The application does not send Google user data to the project maintainers, sell it, or share it with advertisers or data brokers. Data is sent to Google only as needed to synchronize changes you make. Opening a meeting or event link sends you to the provider identified by that link under that provider's own terms.</p>
+    <h2>Diagnostics</h2>
+    <p>The “Copy redacted diagnostics” action runs only when you choose it. It copies versions, record counts, sync state, and errors to your clipboard while excluding tokens, event content, database paths, and account identity. Nothing is transmitted automatically.</p>
+    <h2>Retention and deletion</h2>
+    <p>Cached data remains on your computer until you disconnect the Google account or remove it manually. Disconnecting in Settings removes the account, its cached calendars and events, and its saved refresh token. Uninstalling the package intentionally leaves user data in place so upgrades and reinstalls do not destroy it; you can delete <code>~/.local/share/omarchy-calendar</code> and the application entry in your Secret Service to remove the remainder.</p>
+    <h2>Your control</h2>
+    <p>You can pause individual calendars, disconnect Google from the application, or revoke access from your Google Account at any time. Revocation prevents future API access.</p>
+    <h2>Google API Services</h2>
+    <p>Omarchy Calendar's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including its Limited Use requirements.</p>
+    <h2>Changes and contact</h2>
+    <p>Material changes will be published here and called out in release notes before a new use of Google user data begins. Questions or privacy requests can be sent to <a href="mailto:jason@greatspark.com">jason@greatspark.com</a>. Do not include access tokens or private calendar content in email or public issues.</p>
+  </main>
+  <footer><div class="wrap"><a href="index.html">Home</a> · <a href="terms.html">Terms</a> · <a href="roadmap.html">Roadmap</a></div></footer>
+</body></html>

@@ -17,6 +17,11 @@ Rectangle {
     property real previewHeightDelta: 0
     property bool manipulating: pointer.dragged || resizePointer.pressed
 
+    Accessible.role: Accessible.Button
+    Accessible.name: title + (time.length ? ", " + time : "")
+    Accessible.description: detail
+    Accessible.onPressAction: card.activated(card.eventData)
+
     radius: 8
     color: Qt.rgba(eventColor.r, eventColor.g, eventColor.b, emphasized ? 0.31 : 0.20)
     border.width: emphasized ? 1 : 0
