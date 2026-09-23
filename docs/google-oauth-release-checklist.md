@@ -19,7 +19,7 @@ Current status:
 - [ ] Public support address made eligible in Google Cloud and selected in Branding
 - [x] OAuth application icon uploaded; branding verified and published
 - [x] App published from Testing to Production
-- [ ] Consent demonstration recorded and verification submitted
+- [x] Verification submitted; awaiting Google's final review
 - [ ] Google approval received and production lifecycle retested
 
 ## 1. Choose and verify the public domain
@@ -54,9 +54,13 @@ production. In the production project:
    - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
    - `https://www.googleapis.com/auth/calendar.events`
 5. Create a **Desktop app** OAuth client. Configure the resulting client ID and
-   client secret in a release-only credential file; never commit production
-   credentials to this repository. Official builds install that file with
-   `-DOMARCHY_CALENDAR_OAUTH_ENV_FILE=/absolute/path/to/google-oauth.env`.
+   client secret in a release-only configuration file; never commit production
+   configuration to this repository. The release generator includes exactly
+   those two Desktop app settings in the published source archive, so both AUR
+   and official binary builds install the same configuration. These installed
+   app settings are distributed to users; they are not a confidential server
+   secret. Never include user access tokens, refresh tokens, or service-account
+   keys. See the [Arch release guide](arch-release.md).
 
 The production project is `omarchy-calendar-509223`. Its authorized domain,
 public URLs, external audience, Desktop app client, minimal data-access scope
@@ -94,9 +98,12 @@ used only to identify and label the connected account.
 3. After approval, inject the production desktop client at release build time,
    run the live create/update/RSVP/delete lifecycle on a dedicated test account,
    and confirm account revocation returns the app to an actionable error state.
-4. Bump all release metadata to `1.0.0`, tag `v1.0.0`, build the Arch package,
-   and publish checksums and release notes. The OAuth app is already in
-   production while its sensitive-scope review is pending.
+4. Bump all release metadata to `1.0.0`, commit, and tag `v1.0.0`. The release
+   workflow builds the source archive, checksummed AUR bundle, and binary
+   package, then creates a **draft** GitHub release. Review it and finish the
+   live checks before publication. Confirm the public source downloads work
+   before submitting the generated `PKGBUILD` and `.SRCINFO` to AUR. The OAuth
+   app is already in production while its sensitive-scope review is pending.
 
 Official references:
 

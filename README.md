@@ -33,17 +33,21 @@ A native calendar for [Omarchy](https://omarchy.org/), built with Qt 6 and QML. 
 
 ## 📦 Install on Omarchy
 
-From a clone of this repository, build the included Arch package:
+Once a release is published, download its `omarchy-calendar-VERSION-aur.tar.gz`
+asset from [GitHub Releases](https://github.com/jasona/omarchy-calendar/releases),
+extract it, and build the package:
 
 ```bash
-cd packaging/arch
+cd aur
 makepkg -si
 systemctl --user enable --now omarchy-calendar.service
 ```
 
 Launch **Omarchy Calendar** from the app launcher. The package installs the desktop app, background service, icon, desktop entry, and DBus activation metadata. Your database and local OAuth configuration remain in your home directory across package upgrades.
 
-Google Calendar connection needs a desktop OAuth client. Official release packages may include publisher-provided credentials; for a local build, follow the [Google OAuth setup guide](docs/google-oauth-setup.md) and place your credentials in `~/.config/omarchy-calendar/google-oauth.env`. The app also works with locally cached events when offline.
+Official release source archives and packages include the publisher's desktop OAuth client configuration. AUR builds use the same archive with a pinned checksum. Until the first release is published, use the source-build instructions below. For development builds, follow the [Google OAuth setup guide](docs/google-oauth-setup.md) and place your client configuration in `~/.config/omarchy-calendar/google-oauth.env`.
+
+Google sign-in also requires a running, unlocked Secret Service provider, such as `gnome-keyring` (normally present on Omarchy), KWallet, or KeePassXC with Secret Service integration enabled. `libsecret` is the client library and does not provide a keyring itself. The package lists `gnome-keyring` as an optional dependency because an existing provider can fulfill this requirement. Cached events remain available offline.
 
 ## 🛠️ Build from source
 
@@ -100,7 +104,7 @@ Build the service, then run the contract suite from the repository root:
 
 Run `./tests/capture-visual-baseline.sh` to generate the light and dark visual checks. The app also supports `--view <name>` and `--screenshot <path>` for automated captures.
 
-Version **0.9.0** is the v1.0 release candidate. Public release depends on the publisher's Google OAuth domain and verification steps; see the [release checklist](docs/google-oauth-release-checklist.md). Release builds can supply OAuth credentials through CMake's `OMARCHY_CALENDAR_OAUTH_ENV_FILE` setting. `omarchy-calendar --release-info` prints the public metadata embedded in a build.
+Version **0.9.0** is the v1.0 release candidate. Public release depends on the publisher's Google OAuth verification; see the [release checklist](docs/google-oauth-release-checklist.md). The [Arch release guide](docs/arch-release.md) covers local preparation, clean-chroot validation, and AUR submission. `omarchy-calendar --release-info` prints the public metadata embedded in a build.
 
 ## 🤝 Contributing and security
 

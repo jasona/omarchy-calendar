@@ -8,6 +8,12 @@ event access permits synchronization and user-directed creation, updates, and
 deletion without granting broader calendar-settings access.
 Refresh tokens are stored in Secret Service.
 
+Install and unlock a Secret Service provider before connecting: `gnome-keyring`
+is the usual Omarchy choice; KWallet and a configured KeePassXC can also provide
+the service. Installing `libsecret` alone does not provide token storage.
+Official release packages already include the publisher's Desktop app client
+configuration. The following setup is for development or a personal client.
+
 Create an OAuth client whose application type is **Desktop app**, then create:
 
 ```ini

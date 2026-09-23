@@ -11,8 +11,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Install build dependencies
-        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git glib2 jq libsecret ninja qt6-base qt6-declarative qt6-networkauth
+        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git glib2 jq libsecret ninja python qt6-base qt6-declarative qt6-networkauth sqlite
       - uses: actions/checkout@v4
+      - name: Create unprivileged test user
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
       - name: Verify production install tree
         run: ./tests/test-package-install.sh
       - name: Build service for integration contracts
@@ -20,4 +24,30 @@ jobs:
       - name: Render visual smoke matrix
         run: ./tests/capture-visual-baseline.sh "$PWD/build-ci/omarchy-calendar" "$PWD/build-ci/omarchy-calendar-service" /tmp/omarchy-calendar-visuals
       - name: Run contracts
-        run: ./tests/run-contract-tests.sh "$PWD/build-ci/omarchy-calendar-service"
+        run: runuser -u builder -- ./tests/run-contract-tests.sh "$PWD/build-ci/omarchy-calendar-service"
+
+  arch-package:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 30
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm base-devel devtools git namcap python sudo
+      - uses: actions/checkout@v4
+      - name: Prepare source and AUR files with a test desktop client
+        run: |
+          useradd --create-home builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          printf '%s\n' \
+            'OMARCHY_CALENDAR_GOOGLE_CLIENT_ID=ci-test.apps.googleusercontent.com' \
+            'OMARCHY_CALENDAR_GOOGLE_CLIENT_SECRET=ci-test-secret' > /tmp/ci-oauth.env
+          runuser -u builder -- python3 packaging/prepare-release.py \
+            --ref HEAD --oauth-env /tmp/ci-oauth.env --output build-aur-ci
+      - name: Build in a clean Arch chroot
+        run: runuser -u builder -- bash -c 'cd build-aur-ci/aur && extra-x86_64-build'
+      - name: Validate package contents and dependencies
+        run: ./tests/check-arch-package.sh build-aur-ci/aur

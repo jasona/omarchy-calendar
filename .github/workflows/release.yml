@@ -21,12 +21,16 @@ jobs:
       OMARCHY_CALENDAR_SUPPORT_EMAIL: jason@greatspark.com
     steps:
       - name: Install release dependencies
-        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git github-cli jq libsecret ninja qt6-base qt6-declarative qt6-networkauth
+        run: pacman -Syu --noconfirm appstream base-devel cmake dbus desktop-file-utils git github-cli jq libsecret namcap ninja python qt6-base qt6-declarative qt6-networkauth sqlite xdg-utils
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Create unprivileged build user
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
       - name: Verify tag and release metadata
-        run: ./tests/test-release-metadata.sh
+        run: runuser -u builder -- ./tests/test-release-metadata.sh
       - name: Configure production OAuth credentials
         run: |
           test -n "$OAUTH_CLIENT_ID"
@@ -45,20 +49,20 @@ jobs:
           -DOMARCHY_CALENDAR_SUPPORT_EMAIL="$OMARCHY_CALENDAR_SUPPORT_EMAIL"
           && cmake --build build-release
       - name: Run contracts
-        run: ./tests/run-contract-tests.sh "$PWD/build-release/omarchy-calendar-service"
-      - name: Build Arch package and source archive
+        run: runuser -u builder -- ./tests/run-contract-tests.sh "$PWD/build-release/omarchy-calendar-service"
+      - name: Prepare and validate release artifacts
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          useradd --create-home builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
-          runuser -u builder -- bash -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg --noconfirm --cleanbuild"
-          mkdir -p dist
-          cp packaging/arch/omarchy-calendar-*.pkg.tar.zst dist/
-          git archive --format=tar.gz --prefix="omarchy-calendar-$version/" \
-            --output="dist/omarchy-calendar-$version.tar.gz" "$GITHUB_REF_NAME"
+          runuser -u builder -- python3 packaging/prepare-release.py \
+            --ref "$GITHUB_REF_NAME" --oauth-env packaging/google-oauth.env --output dist
+          runuser -u builder -- bash -c 'cd dist/aur && makepkg --noconfirm --cleanbuild'
+          ./tests/check-arch-package.sh dist/aur
+          cp dist/aur/omarchy-calendar-*.pkg.tar.zst dist/
           cd dist
-          sha256sum * > SHA256SUMS
-      - name: Publish GitHub release
+          sha256sum ./*.tar.gz ./*.pkg.tar.zst SOURCE_REVISION > SHA256SUMS
+      - name: Create draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.pkg.tar.zst
+          dist/SHA256SUMS dist/SOURCE_REVISION --generate-notes --verify-tag --draft

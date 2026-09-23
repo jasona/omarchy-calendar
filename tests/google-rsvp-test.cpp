@@ -2,6 +2,7 @@
 #include "googlemutations.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QHostAddress>
 #include <QJsonArray>
@@ -24,6 +25,8 @@ void respond(QTcpSocket *socket, const QByteArray &body)
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    // Invitations must still be upcoming when this contract runs.
+    const QString eventDate = QDateTime::currentDateTimeUtc().addDays(2).date().toString(Qt::ISODate);
     QTemporaryDir temporary;
     QTcpServer server;
     if (!temporary.isValid() || !server.listen(QHostAddress::LocalHost, 0)) return 2;
@@ -52,7 +55,8 @@ int main(int argc, char **argv)
                     && attendees.size() == 2
                     && attendees.at(0).toObject().value("responseStatus") == QStringLiteral("accepted")
                     && attendees.at(1).toObject().value("email") == QStringLiteral("other@example.com");
-                respond(socket, R"({"id":"invite-1","summary":"Project kickoff","organizer":{"email":"owner@example.com"},"attendees":[{"email":"me@example.com","self":true,"responseStatus":"accepted"},{"email":"other@example.com","responseStatus":"tentative"}],"start":{"dateTime":"2026-09-22T09:00:00-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-22T10:00:00-07:00","timeZone":"America/Phoenix"},"etag":"invite-etag-2","updated":"2026-09-21T22:00:00Z","status":"confirmed"})");
+                respond(socket, QByteArray(R"({"id":"invite-1","summary":"Project kickoff","organizer":{"email":"owner@example.com"},"attendees":[{"email":"me@example.com","self":true,"responseStatus":"accepted"},{"email":"other@example.com","responseStatus":"tentative"}],"start":{"dateTime":"2026-09-22T09:00:00-07:00","timeZone":"America/Phoenix"},"end":{"dateTime":"2026-09-22T10:00:00-07:00","timeZone":"America/Phoenix"},"etag":"invite-etag-2","updated":"2026-09-21T22:00:00Z","status":"confirmed"})")
+                                    .replace("2026-09-22", eventDate.toUtf8()));
             });
         }
     });
@@ -74,8 +78,8 @@ int main(int argc, char **argv)
             QJsonObject { { "email", "me@example.com" }, { "self", true }, { "responseStatus", "needsAction" } },
             QJsonObject { { "email", "other@example.com" }, { "responseStatus", "tentative" } }
         } },
-        { "start", QJsonObject { { "dateTime", "2026-09-22T09:00:00-07:00" }, { "timeZone", "America/Phoenix" } } },
-        { "end", QJsonObject { { "dateTime", "2026-09-22T10:00:00-07:00" }, { "timeZone", "America/Phoenix" } } },
+        { "start", QJsonObject { { "dateTime", eventDate + "T09:00:00-07:00" }, { "timeZone", "America/Phoenix" } } },
+        { "end", QJsonObject { { "dateTime", eventDate + "T10:00:00-07:00" }, { "timeZone", "America/Phoenix" } } },
         { "etag", "invite-etag-1" }, { "updated", "2026-09-21T21:00:00Z" }, { "status", "confirmed" }
     };
     if (!database.applyGoogleEvents(accountId, calendarId, QJsonArray { invitation }, "rsvp-sync", true)) return 4;
@@ -84,7 +88,7 @@ int main(int argc, char **argv)
         || notifications.at(0).toObject().value("title") != QStringLiteral("Project kickoff")
         || !database.takeNewInvitations().array().isEmpty()
         || !database.respondPendingEvent(calendarId, "invite-1", "accepted")) return 4;
-    const QJsonObject optimistic = database.eventsForRange("2026-09-22", "2026-09-22").array().at(0).toObject();
+    const QJsonObject optimistic = database.eventsForRange(eventDate, eventDate).array().at(0).toObject();
     if (!optimistic.value("canRespond").toBool()
         || optimistic.value("selfResponseStatus") != QStringLiteral("accepted")
         || database.nextPendingMutation(accountId).object().value("operation") != QStringLiteral("rsvp")) return 5;
@@ -99,7 +103,7 @@ int main(int argc, char **argv)
     QTimer::singleShot(5000, &loop, &QEventLoop::quit);
     if (!mutations.start(accountId, "rsvp-token")) return 6;
     loop.exec();
-    const QJsonObject stored = database.eventsForRange("2026-09-22", "2026-09-22").array().at(0).toObject();
+    const QJsonObject stored = database.eventsForRange(eventDate, eventDate).array().at(0).toObject();
     if (!completed || !validPatch || !database.pendingMutations().array().isEmpty()
         || stored.value("selfResponseStatus") != QStringLiteral("accepted")
         || stored.value("etag") != QStringLiteral("invite-etag-2")) return 7;

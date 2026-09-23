@@ -24,6 +24,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
 
 qt_standard_project_setup(REQUIRES 6.5)
+# Arch packages install shared libraries in the system search path.
+set(CMAKE_INSTALL_RPATH "")
 
 qt_add_executable(omarchy-calendar
     app/eventstore.cpp
@@ -97,8 +99,10 @@ install(FILES packaging/dbus/org.omarchy.Calendar.service
     DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
 install(FILES packaging/systemd/omarchy-calendar.service
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
-install(FILES README.md CHANGELOG.md LICENSE SECURITY.md
+install(FILES README.md CHANGELOG.md SECURITY.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/omarchy-calendar)
+install(FILES LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/omarchy-calendar)
 if(OMARCHY_CALENDAR_OAUTH_ENV_FILE)
     install(FILES ${OMARCHY_CALENDAR_OAUTH_ENV_FILE}
         DESTINATION ${CMAKE_INSTALL_DATADIR}/omarchy-calendar
