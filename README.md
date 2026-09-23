@@ -1,41 +1,71 @@
+<div align="center">
+
+<img src="packaging/icons/org.omarchy.Calendar.svg" alt="Omarchy Calendar icon" width="112">
+
 # Omarchy Calendar
 
-A native calendar for [Omarchy](https://omarchy.org/), built with Qt 6 and QML. Browse your schedule, manage Google Calendar events, and keep your calendar available offline in a desktop app that follows your Omarchy theme.
+**A fast, native calendar for [Omarchy](https://omarchy.org/) that works offline and syncs with Google Calendar.**
 
-![Omarchy Calendar week view](screenshots/week.png)
+[![CI](https://github.com/jasona/omarchy-calendar/actions/workflows/ci.yml/badge.svg)](https://github.com/jasona/omarchy-calendar/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.9.0-6E56CF)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Qt 6](https://img.shields.io/badge/Qt-6.5%2B-41CD52?logo=qt&logoColor=white)](https://www.qt.io/)
+[![Arch Linux](https://img.shields.io/badge/Arch-Linux-1793D1?logo=archlinux&logoColor=white)](https://archlinux.org/)
+
+[Features](#-features) •
+[Screenshots](#-screenshots) •
+[Install](#-install) •
+[Shortcuts](#%EF%B8%8F-keyboard-shortcuts) •
+[Build from source](#%EF%B8%8F-build-from-source) •
+[Contributing](#-contributing)
+
+<br>
+
+<img src="screenshots/week.png" alt="Omarchy Calendar week view" width="860">
+
+</div>
+
+## 👋 Why this exists
+
+Omarchy gives you a beautiful, keyboard-driven desktop, but checking your calendar still meant opening a browser tab. Omarchy Calendar is a real desktop app built with Qt 6 and QML. It picks up your Omarchy theme, works fine on a plane, and stays out of your way.
+
+Your events live on your machine. Google Calendar is where they sync to, not the only place they exist.
 
 ## ✨ Features
 
-- **Plan your way:** Day, week, month, and agenda views, with a live current-time indicator and all-day events.
-- **Work offline:** Events live in a local SQLite database. Changes are queued and synchronized with Google Calendar when connectivity returns.
-- **Edit directly:** Create, move, resize, and delete events; manage guests, reminders, recurrence, time zones, availability, and meeting links.
-- **Find events quickly:** Search titles, notes, locations, calendars, organizers, and guests. Filters include `calendar:`, `after:`, `before:`, `organizer:`, and `response:`.
-- **Stay informed:** Desktop reminders, invitation responses, sync status, and an inspector for queued or conflicted changes.
-- **Feel at home on Omarchy:** Follows the active palette and typography settings, offers two density modes, and supports keyboard navigation and screen readers.
+- 🗓️ **See your time your way.** Switch between day, week, month, and agenda views. There's a live line showing the current time, and all-day events get their own space.
+- ✈️ **Keep working offline.** Everything is stored in a local SQLite database. Edits you make offline get queued and synced to Google Calendar once you're back online.
+- ✏️ **Edit right on the calendar.** Create, drag, resize, and delete events. You can also manage guests, reminders, repeating events, time zones, busy/free status, and meeting links.
+- 🔍 **Find things fast.** Search titles, notes, locations, calendars, organizers, and guests. Narrow things down with filters like `calendar:`, `after:`, `before:`, `organizer:`, and `response:`.
+- 🔔 **Stay in the loop.** You get desktop reminders and can reply to invitations. A sync inspector shows you anything that's still queued or has a conflict.
+- 🎨 **Feels like Omarchy.** It follows your current palette and fonts, has two density modes, and works with the keyboard and screen readers.
 
 ## 📸 Screenshots
 
-| Day | Week |
-| --- | --- |
-| <img src="screenshots/day.png" alt="Day view with timed events and the current-time line" width="480"> | <img src="screenshots/week.png" alt="Week view with events across seven days" width="480"> |
+<table>
+  <tr>
+    <td align="center"><b>Day</b><br><img src="screenshots/day.png" alt="Day view with timed events and the current-time line" width="420"></td>
+    <td align="center"><b>Week</b><br><img src="screenshots/week.png" alt="Week view with events across seven days" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Month</b><br><img src="screenshots/month.png" alt="Month view with events in a calendar grid" width="420"></td>
+    <td align="center"><b>Agenda</b><br><img src="screenshots/agenda.png" alt="Agenda view listing upcoming events" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Search</b><br><img src="screenshots/search.png" alt="Search screen" width="420"></td>
+    <td align="center"><b>Settings</b><br><img src="screenshots/settings.png" alt="Settings and Google Calendar account controls" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><b>Welcome</b><br><img src="screenshots/onboarding.png" alt="Welcome screen explaining local storage and Google Calendar connection" width="420"></td>
+  </tr>
+</table>
 
-| Month | Agenda |
-| --- | --- |
-| <img src="screenshots/month.png" alt="Month view with events in a calendar grid" width="480"> | <img src="screenshots/agenda.png" alt="Agenda view listing upcoming events" width="480"> |
+## 📦 Install
 
-| Search | Settings |
-| --- | --- |
-| <img src="screenshots/search.png" alt="Search screen" width="480"> | <img src="screenshots/settings.png" alt="Settings and Google Calendar account controls" width="480"> |
+> [!NOTE]
+> Version **0.9.0** is the release candidate for v1.0. The first public release is waiting on Google's OAuth verification. Until it ships, [build from source](#%EF%B8%8F-build-from-source) instead.
 
-**Welcome screen**
-
-<img src="screenshots/onboarding.png" alt="Welcome screen explaining local storage and Google Calendar connection" width="480">
-
-## 📦 Install on Omarchy
-
-Once a release is published, download its `omarchy-calendar-VERSION-aur.tar.gz`
-asset from [GitHub Releases](https://github.com/jasona/omarchy-calendar/releases),
-extract it, and build the package:
+Once a release is out, grab `omarchy-calendar-VERSION-aur.tar.gz` from the [Releases page](https://github.com/jasona/omarchy-calendar/releases), extract it, and run:
 
 ```bash
 cd aur
@@ -43,15 +73,78 @@ makepkg -si
 systemctl --user enable --now omarchy-calendar.service
 ```
 
-Launch **Omarchy Calendar** from the app launcher. The package installs the desktop app, background service, icon, desktop entry, and DBus activation metadata. Your database and local OAuth configuration remain in your home directory across package upgrades.
+That's it. Open **Omarchy Calendar** from your app launcher.
 
-Official release source archives and packages include the publisher's desktop OAuth client configuration. AUR builds use the same archive with a pinned checksum. Until the first release is published, use the source-build instructions below. For development builds, follow the [Google OAuth setup guide](docs/google-oauth-setup.md) and place your client configuration in `~/.config/omarchy-calendar/google-oauth.env`.
+The package installs the app, a small background service that handles syncing, the icon, the desktop entry, and DBus activation files. Your database and settings live in your home directory, so they stick around when you upgrade.
 
-Google sign-in also requires a running, unlocked Secret Service provider, such as `gnome-keyring` (normally present on Omarchy), KWallet, or KeePassXC with Secret Service integration enabled. `libsecret` is the client library and does not provide a keyring itself. The package lists `gnome-keyring` as an optional dependency because an existing provider can fulfill this requirement. Cached events remain available offline.
+### What you'll need for Google sign-in
+
+Google sign-in stores your login in the system keyring, so you need a running, unlocked Secret Service provider. On Omarchy, `gnome-keyring` is usually already there. KWallet or KeePassXC (with Secret Service turned on) work too.
+
+Heads up: `libsecret` is only the library that talks to the keyring. It isn't a keyring itself. If you're not signed in, you can still see all your cached events offline.
+
+> [!TIP]
+> Official releases come with the publisher's Google OAuth client already set up. If you're building for development, follow the [Google OAuth setup guide](docs/google-oauth-setup.md) and put your own client config in `~/.config/omarchy-calendar/google-oauth.env`.
+
+## ⌨️ Keyboard shortcuts
+
+| What you want to do | Keys |
+| --- | --- |
+| Day / Week / Month / Agenda | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> / <kbd>4</kbd> |
+| Jump to today | <kbd>T</kbd> |
+| Search | <kbd>/</kbd> |
+| New event / Quick Add | <kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> |
+| Edit / delete the selected event | <kbd>E</kbd> / <kbd>Delete</kbd> |
+| Settings / every shortcut | <kbd>Ctrl</kbd>+<kbd>,</kbd> / <kbd>F1</kbd> |
+
+Move between events with the arrow keys or <kbd>J</kbd> / <kbd>K</kbd>. In day and week views, you can nudge the selected event:
+
+- <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> moves it 15 minutes
+- <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> moves it a day
+- <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> makes it shorter or longer
+
+**Quick Add** understands everyday phrasing. Type something like "Team sync tomorrow 10am for 45m" or "Lunch next Friday noon", check what it came up with, and save.
+
+## 🧩 How it works
+
+```text
+┌────────────────────┐                ┌────────────────────────────┐
+│  Omarchy Calendar  │                │  omarchy-calendar-service  │                 ┌───────────────────┐
+│  (Qt 6 / QML app)  │  ◀── DBus ──▶  │  (systemd user service)    │  ◀── HTTPS ──▶  │  Google Calendar  │
+└────────────────────┘                └──────────────┬─────────────┘                 └───────────────────┘
+                                                     │
+                                                     ▼
+                               ~/.local/share/omarchy-calendar/calendar.db
+```
+
+- The **app** is the part you see. It gets your calendar data from the service over DBus. If the service isn't running, it falls back to the Omarchy JSON calendar feed.
+- The **service** runs in the background, keeps everything in SQLite, and handles syncing with Google.
+- The **theme** comes from `~/.local/state/omarchy/current/theme/colors.toml`, and font overrides come from `~/.config/omarchy/shell.toml`.
+
+Want to talk to the service yourself? Check out the [DBus API docs](docs/dbus-api.md).
 
 ## 🛠️ Build from source
 
-The desktop app has a qmake project for a quick build on Omarchy:
+### Requirements
+
+- Qt **6.5+** (Core, DBus, Gui, Network, NetworkAuth, Qml, Quick, QuickControls2, Sql)
+- A C++20 compiler
+- CMake **3.21+** and Ninja (or qmake6 if you want the quick route)
+- `libsecret` and `pkg-config`
+
+### With CMake (same as the package build)
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+<details>
+<summary><b>Quick build with qmake</b></summary>
+
+<br>
+
+Build the desktop app:
 
 ```bash
 mkdir -p build-qmake
@@ -62,7 +155,7 @@ make -j"$(nproc)"
 cd ..
 ```
 
-To build the background service from the repository root:
+Build the background service from the repo root:
 
 ```bash
 mkdir -p build-service
@@ -72,40 +165,39 @@ make -j"$(nproc)"
 cd ..
 ```
 
-The packaged build uses CMake. It requires Qt 6.5 or newer (Core, DBus, Gui, Network, NetworkAuth, Qml, Quick, QuickControls2, and Sql), `libsecret`, `pkg-config`, a C++20 compiler, and CMake 3.21 or newer:
+</details>
 
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-```
+## 🧪 Testing
 
-The app reads calendar data from the service over DBus and can fall back to the Omarchy JSON calendar feed if the service is unavailable. The service stores data in `~/.local/share/omarchy-calendar/calendar.db` and keeps Google calendars synchronized. The app follows `~/.local/state/omarchy/current/theme/colors.toml` and typography overrides in `~/.config/omarchy/shell.toml`.
-
-## ⌨️ Everyday shortcuts
-
-| Action | Shortcut |
-| --- | --- |
-| Day / Week / Month / Agenda | `1` / `2` / `3` / `4` |
-| Today | `T` |
-| Search | `/` |
-| New event / Quick Add | `N` / `Ctrl+K` |
-| Edit / delete selected event | `E` / `Delete` |
-| Settings / all shortcuts | `Ctrl+,` / `F1` |
-
-Arrow keys and `J` / `K` navigate events. In day and week views, use `Alt+↑/↓` to move a selected event by 15 minutes, `Alt+←/→` to move it by a day, and `Alt+Shift+↑/↓` to resize it. Quick Add understands phrases with relative dates, weekdays, times, and durations, and lets you review the result before saving.
-
-## 🧪 Testing and releases
-
-Build the service, then run the contract suite from the repository root:
+Build the service first, then run the contract tests from the repo root:
 
 ```bash
 ./tests/run-contract-tests.sh build-service/omarchy-calendar-service
 ```
 
-Run `./tests/capture-visual-baseline.sh` to generate the light and dark visual checks. The app also supports `--view <name>` and `--screenshot <path>` for automated captures.
+For visual checks, `./tests/capture-visual-baseline.sh` takes light and dark mode screenshots. The app also accepts `--view <name>` and `--screenshot <path>`, which is handy for automated captures. Run `omarchy-calendar --release-info` to see the public metadata baked into a build.
 
-Version **0.9.0** is the v1.0 release candidate. Public release depends on the publisher's Google OAuth verification; see the [release checklist](docs/google-oauth-release-checklist.md). The [Arch release guide](docs/arch-release.md) covers local preparation, clean-chroot validation, and AUR submission. `omarchy-calendar --release-info` prints the public metadata embedded in a build.
+## 🚀 Releases
 
-## 🤝 Contributing and security
+- 📋 [Release checklist](docs/google-oauth-release-checklist.md): what has to happen before a public release, including Google OAuth verification
+- 🏗️ [Arch release guide](docs/arch-release.md): local prep, clean-chroot validation, and AUR submission
+- 📝 [Changelog](CHANGELOG.md): what's changed in each version
 
-Issues and pull requests are welcome. Please report vulnerabilities privately according to [SECURITY.md](SECURITY.md). This project is licensed under the [MIT License](LICENSE).
+## 🤝 Contributing
+
+Issues and pull requests are welcome! If you've found a bug, have an idea, or want to fix something that's bugging you, go ahead and open an issue or send a PR.
+
+Before you open a PR, please make sure the contract tests pass. If your change affects the UI, a screenshot or two really helps.
+
+## 🔒 Security
+
+If you find a security issue, please **don't** open a public issue. Report it privately by following the steps in [SECURITY.md](SECURITY.md).
+
+## 📄 License
+
+Omarchy Calendar is released under the [MIT License](LICENSE).
+
+<div align="center">
+<br>
+Made with ☕ for the Omarchy community.
+</div>
